@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="500" height="210" viewBox="0 0 500 210">
+  <defs>
+    <linearGradient id="market" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#182842" />
+      <stop offset=".58" stop-color="#1d3850" />
+      <stop offset="1" stop-color="#13695e" />
+    </linearGradient>
+  </defs>
+  <rect width="500" height="210" rx="22" fill="url(#market)" />
+  <circle cx="438" cy="58" r="98" fill="#54d6a0" fill-opacity=".07" />
+</svg>

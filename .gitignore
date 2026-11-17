@@ -1,0 +1,27 @@
+.local/
+.venv/
+__pycache__/
+*.py[cod]
+**/bin/
+**/obj/
+.DS_Store
+*.dll
+*.pdb
+*.tpk
+*.wgt
+*.db
+*.db-*
+*.sqlite*
+*.pem
+*.key
+*.token
+*.log
+*.zip
+*.tar*
+launcher/assets/app-icons/
+launcher/assets/apps.local.json
+launcher/assets/govee-scenes.local.json
+# Publisher logos extracted from the TV or downloaded: keep local only
+launcher/assets/app-cards-local/
+launcher/assets/dock-*.png
+launcher/assets/*.local.json
