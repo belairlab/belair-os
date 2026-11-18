@@ -50,16 +50,18 @@ public sealed class QuickLaunch : NUIApplication {
   }
   string mediaRequest,felixRequest,seriesRequest;
   bool wantSeries=e.ReceivedAppControl.ExtraData.TryGet("quiet_series_request",out seriesRequest)&&!string.IsNullOrEmpty(seriesRequest);
+  string factsRequest;bool wantFacts=e.ReceivedAppControl.ExtraData.TryGet("quiet_facts_request",out factsRequest)&&factsRequest=="1";
   bool wantMedia=e.ReceivedAppControl.ExtraData.TryGet("quiet_media_request",out mediaRequest)&&!string.IsNullOrEmpty(mediaRequest);
   bool wantFelix=e.ReceivedAppControl.ExtraData.TryGet("quiet_felix_request",out felixRequest)&&(felixRequest=="1"||felixRequest=="2");
-  if(wantMedia||wantFelix||wantSeries){
-   haLast=DateTime.UtcNow;System.Threading.Interlocked.Increment(ref haBusy);bool hubs=mediaRequest=="all",wm=wantMedia,wf=wantFelix,live=felixRequest=="2";string sr=wantSeries?seriesRequest:null;
+  if(wantMedia||wantFelix||wantSeries||wantFacts){
+   haLast=DateTime.UtcNow;System.Threading.Interlocked.Increment(ref haBusy);bool hubs=mediaRequest=="all",wm=wantMedia,wf=wantFelix,live=felixRequest=="2";string sr=wantSeries?seriesRequest:null;bool wfa=wantFacts;
    Task.Run(()=>{try{
     var mediaTask=wm?Task.Run(()=>FetchMediaJson(hubs)):Task.FromResult<string>(null);
     var felixTask=wf?Task.Run(()=>FetchFelixJson(live)):Task.FromResult<string>(null);
     var seriesTask=sr!=null?Task.Run(()=>FetchSeriesJson(sr)):Task.FromResult<string>(null);
-    Task.WaitAll(mediaTask,felixTask,seriesTask);
-    ReplyExtra(mediaTask.Result,felixTask.Result,seriesTask.Result);
+    var factsTask=wfa?Task.Run(FetchFactsJson):Task.FromResult<string>(null);
+    Task.WaitAll(mediaTask,felixTask,seriesTask,factsTask);
+    ReplyExtra(mediaTask.Result,felixTask.Result,seriesTask.Result,factsTask.Result);
    }catch{}finally{haLast=DateTime.UtcNow;System.Threading.Interlocked.Decrement(ref haBusy);}});
    KeepWarm();return;
   }
@@ -874,8 +876,8 @@ public sealed class QuickLaunch : NUIApplication {
   PruneDir(SharedDir("felix"),new HashSet<string>{System.IO.Path.GetFileName(map)},2);
   return JsonSerializer.Serialize(new{Map=map,Stamp=stamp,States=states,Buttons=buttons,Rooms=FelixRooms()});
  }
- static int ReplyExtra(string media,string felix,string series=null){
-  if(media==null&&felix==null&&series==null)return 0;
+ static int ReplyExtra(string media,string felix,string series=null,string facts=null){
+  if(media==null&&felix==null&&series==null&&facts==null)return 0;
   IntPtr c;int r=app_control_create(out c);if(r!=0)return r;
   try{
    r=app_control_set_app_id(c,"com.samsung.tv.bixby-promotion");
@@ -884,6 +886,7 @@ public sealed class QuickLaunch : NUIApplication {
    if(r==0&&media!=null)r=app_control_add_extra_data(c,"quiet_media",media);
    if(r==0&&felix!=null)r=app_control_add_extra_data(c,"quiet_felix",felix);
    if(r==0&&series!=null)r=app_control_add_extra_data(c,"quiet_series",series);
+   if(r==0&&facts!=null)r=app_control_add_extra_data(c,"quiet_facts",facts);
    if(r==0)r=app_control_send_launch_request(c,IntPtr.Zero,IntPtr.Zero);
    return r;
   }finally{app_control_destroy(c);}
@@ -933,6 +936,45 @@ public sealed class QuickLaunch : NUIApplication {
     return JsonSerializer.Serialize(new{Symbol=parts[0],Range=parts[1],Price=meta.GetProperty("regularMarketPrice").GetDouble(),Previous=previous,Points=points,Times=times});
    }
   }}catch{return JsonSerializer.Serialize(new{Symbol=parts[0],Range=parts[1],Price=0.0,Previous=0.0,Points=new double[0],Times=new long[0]});}
+ }
+ // ---- "Le saviez-vous ?" anecdotes from French Wikipedia: today's plus last year's archive, cached a day in the shared folder ----
+ static List<string> WikiAnecdotes(HttpClient client,string page){
+  var list=new List<string>();
+  try{
+   string json=client.GetStringAsync("https://fr.wikipedia.org/w/api.php?action=parse&format=json&prop=text&formatversion=2&page="+Uri.EscapeDataString(page)).GetAwaiter().GetResult();
+   using(var doc=JsonDocument.Parse(json)){
+    if(!doc.RootElement.TryGetProperty("parse",out var parse))return list;
+    string text=Regex.Replace(parse.GetProperty("text").GetString()??"","<(figure|figcaption)\\b.*?</\\1>|<div class=\"thumb.*?</div>\\s*</div>","",RegexOptions.Singleline);
+    foreach(Match m in Regex.Matches(text,"<li>(.*?)</li>",RegexOptions.Singleline)){
+     string t=CleanNewsText(m.Groups[1].Value);
+     int cut=t.IndexOf(" présente ",StringComparison.Ordinal);if(cut<0)cut=t.IndexOf("présente ",StringComparison.Ordinal);if(cut>0)t=t.Substring(0,cut).Trim();
+     t=Regex.Replace(t,"\\s*\\((photo|illustration|dessin|image|carte|portrait|gravure|tableau|statue|affiche|peinture|vidéo|schéma|photographie|sculpture|logo|plan|croquis|timbre|caricature)[^)]{0,20}\\)","");
+     t=Regex.Replace(t,"\\s+"," ").Trim();
+     if(t.Length>=40&&t.Length<=260&&(t.EndsWith(".")||t.EndsWith("?")||t.EndsWith("!")||t.EndsWith("»")))list.Add(t);
+    }
+   }
+  }catch{}
+  return list;
+ }
+ static string FetchFactsJson(){
+  string cache=System.IO.Path.Combine(SharedDir("data"),"anecdotes.json");
+  try{if(File.Exists(cache)&&(DateTime.UtcNow-File.GetLastWriteTimeUtc(cache)).TotalHours<20)return Pick(JsonSerializer.Deserialize<List<string>>(File.ReadAllText(cache)));}catch{}
+  var all=new List<string>();
+  try{using(var client=WebClient(20)){
+   all.AddRange(WikiAnecdotes(client,"Wikipédia:Le saviez-vous ?/Anecdotes sur l'accueil"));
+   int year=DateTime.Now.Year;
+   foreach(int y in new[]{year,year-1}){var a=WikiAnecdotes(client,"Wikipédia:Le saviez-vous ?/Archives/"+y);all.AddRange(a);if(all.Count>300)break;}
+  }}catch{}
+  all=all.Distinct().ToList();
+  if(all.Count<10)return null;
+  try{File.WriteAllText(cache,JsonSerializer.Serialize(all));}catch{}
+  return Pick(all);
+ }
+ // The most recent anecdotes first, then a random sample of the archive.
+ static string Pick(List<string> all){
+  if(all==null||all.Count==0)return null;
+  var rnd=new Random();var head=all.Take(6).ToList();var rest=all.Skip(6).OrderBy(_=>rnd.Next()).Take(54);
+  return JsonSerializer.Serialize(head.Concat(rest).ToList());
  }
  static string ChildValue(XElement parent,params string[] names){
   foreach(string name in names){

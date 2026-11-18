@@ -1,122 +1,130 @@
-# Quiet Tizen
+# BelAir OS
 
-A practical, agent-readable guide to making a Samsung Tizen TV quieter and
-more useful as an HDMI display.
+**BelAir OS** est un launcher sur mesure pour une TV **Samsung S95H (Tizen 9)** rootée : il remplace l'accueil Samsung par une interface rapide, en français, qui réunit la TV, l'Apple TV, Plex, la maison connectée (Home Assistant), les transports, la météo, la bourse et l'électricité.
 
-This project documents work performed on one **Samsung UN75U8000FFXZA (2025
-U8000F)**. It includes **Quiet Home**, a native launcher with a colorful,
-English-language interface, lightweight settings, local app cards and a
-shortcut to native Bluetooth controller pairing.
+Il est construit sur [Quiet Tizen](docs/quiet-tizen.md) (launcher natif NUI/C#, outils de nettoyage et de restauration) et en garde les principes : tout est réversible, rien ne tourne en root en permanence, et la TV reste une TV (HDMI, son, réseau, Bluetooth intacts).
 
-![Quiet Home layout illustration](docs/quiet-home-preview.svg)
+![Accueil](docs/screenshots/accueil.jpg)
 
-*Layout illustration with the public text-only app cards. Input labels are configurable.*
+---
 
-It also includes targeted cleanup profiles, source-build tools and rollback
-recipes. **It is a working case study with a reusable toolkit, not a universal
-installer or a replacement operating system.**
+## Sommaire
 
-## Give this repository to your coding agent
+- [Pages](#pages)
+- [Maison connectée](#maison-connectée)
+- [Divertissement](#divertissement)
+- [Infos du quotidien](#infos-du-quotidien)
+- [Réglages et apparence](#réglages-et-apparence)
+- [Architecture](#architecture)
+- [Installer et déployer](#installer-et-déployer)
+- [Données personnelles](#données-personnelles)
+- [Crédits](#crédits)
 
-Clone the repository, open it in Codex, and use:
+## Pages
 
-> Read README.md and AGENTS.md, then inspect the documentation before touching
-> my TV. Help me reproduce Quiet Tizen on a TV I own. First identify its exact
-> model, firmware and runtime, compare them with the tested profile, and show
-> me any compatibility gaps. Keep HDMI, sound, networking, Bluetooth and
-> accessibility working. Prefer HDMI and minimize smart features; keep the
-> streaming apps I choose. Back up my actual settings and prepare rollback
-> before each change. Install and verify Quiet Home before assigning it to
-> Home/startup or replacing the slow settings sidebar. Use the measured
-> findings and known limitations rather than assuming every package is spyware
-> or promising a particular speed improvement.
-
-If your TV differs, begin with an inventory. A matching brand, year, Tizen
-version or successful root check is **not** enough to establish launcher or
-cleanup compatibility.
-
-## What is here
-
-| Component | What it does |
+| Onglet | Contenu |
 |---|---|
-| [Quiet Home source](launcher/src/Home.cs) | Native .NET/NUI home, HDMI cards, app library and quick settings |
-| [App catalog](launcher/assets/apps.json) | Example shortcuts for Netflix, YouTube, Prime Video, HBO Max, Disney+, Hulu, Spotify, Apple TV, Tubi, Luna and Xbox |
-| [Artwork tools](docs/06-artwork.md) | Vector/high-resolution artwork sources, optional local downloads and retained image views |
-| [Cleanup profile](profiles/un75u8000ffxza-1300.9.json) | Separately selectable advertising, voice, context, smart-extras, sidebar and TV Plus groups |
-| [Cleanup planner](tools/plan_cleanup.py) | Field-specific apply/restore SQL generated from your own fresh snapshot |
-| [Access helper](tools/tv.py) | Explicit-target SDB preflight, temporary authenticated root, bounded transfers and session cleanup checks |
-| [Recipes](recipes) | Snapshot, stop-marker, launcher, settings-bridge and restoration scripts |
-| [Evidence](evidence/observations.json) | Sanitized observations and the limits of what was verified |
+| **Accueil** | Tuile Apple TV avec ce qui est en lecture (affiche, progression, temps restant), Bourse CAC 40, « Le saviez-vous ? », métro 6 en temps réel, météo, températures intérieures, électricité, heure de Paris et de Buenos Aires, dock d'applis (dont **France 2 en direct**) |
+| **Applis** | Toutes les applis installées, avec leurs vraies icônes, triées par usage |
+| **Plex** | Ce qui joue sur l'Apple TV + « Continuer à regarder » et « À suivre » du serveur Plex, lancement direct dans Plex |
+| **Maison** | Scènes, volets, lampes, lampes Govee avec scènes, mode cinéma automatique |
+| **Félix** | Robot aspirateur : carte en direct, état, entretien, nettoyage par pièce et programmes |
+| **Énergie** | Consommation électrique quotidienne sur 30 jours (Linky / Octopus) |
+| **Système** | Infos TV : système, réseau, processeur, mémoire, stockage |
+| **Réglages** | Volume, luminosité et contraste, mode d'image, mode jeu, son, minuterie, réseau, thème, couleur, fond d'écran, brief du matin |
 
-Quiet Home uses Tizen's existing display, audio, HDMI and application stack.
-It can become the default Home/startup experience; Samsung's underlying OS
-continues to run. The TV does not need a laptop running after installation.
-Root access is reacquired from the computer when maintenance requires it.
+Pages ouvertes depuis l'accueil : **Météo** (prévisions horaires et 7 jours), **Information trafic** (métro et RER), **Actualités** (franceinfo, articles complets avec photos) et **Bourse** (13 valeurs, graphiques).
 
-## Tested scope and current status
+## Maison connectée
 
-| Item | Recorded result |
+Tout passe par **Home Assistant** (local en priorité, accès distant en secours).
+
+![Maison](docs/screenshots/maison.jpg)
+
+- **Scènes** Bonjour, Bonne nuit, Film, Pause en un clic.
+- **Volets** réglables finement (fermé, 25, 50, 75 %, ouvert), avec la position réelle affichée.
+
+  ![Volets](docs/screenshots/volets.jpg)
+
+- **Lampes** allumées/éteintes en un clic, groupe cuisine compris.
+- **Lampes Govee** (néon du salon, lanterne du bureau) : un panneau façon app Govee avec luminosité, **scènes Govee** (les plus populaires en premier, puis tout le catalogue par catégorie : 362 pour le néon, 107 pour la lanterne, noms en français), ambiances prêtes à l'emploi, couleurs et blancs.
+
+  ![Panneau Govee](docs/screenshots/govee-panel.jpg)
+  ![Catalogue de scènes Govee](docs/screenshots/govee-catalogue.jpg)
+
+- **Mode cinéma automatique** : quand Plex ou Netflix joue sur l'Apple TV (ou Plex sur la TV), les lumières s'éteignent et les volets se ferment ; à la pause, les lampes se rallument sans toucher aux volets.
+- **Félix**, le robot aspirateur : carte de l'appartement rafraîchie toutes les 8 s pendant le ménage, batterie, pièce en cours, entretien des brosses et filtres, **nettoyage sur mesure** (choix des pièces, aspirer / laver / les deux) et programmes enregistrés.
+
+  ![Félix (carte floutée)](docs/screenshots/felix.jpg)
+
+## Divertissement
+
+- **Apple TV** : la tuile d'accueil montre en direct ce qui est en lecture (titre, appli, illustration dans l'écran dessiné, progression).
+- **Plex** : rangée « En cours et à reprendre » avec affiches ; OK ouvre Plex et lance le titre choisi.
+
+  ![Plex](docs/screenshots/plex.jpg)
+
+- **France 2 en direct** : une tuile du dock passe la TV sur l'Apple TV et lance le direct dans CANAL+ (≈ 4 s).
+
+## Infos du quotidien
+
+| | |
 |---|---|
-| Model | `UN75U8000FFXZA` |
-| Firmware | `T-KSU2EFAKUC-0090-1300.9` |
-| Platform | Tizen 9.0, Linux 5.4.261, ARMv7; .NET runtime 6.0.9 |
-| Temporary root | Authenticated UID/EUID 0; session staging cleaned; passwd/SDB key unchanged |
-| Home/startup | Quiet Home launch verified after a full restart |
-| Inputs and everyday controls | HDMI switching, volume and mute verified; native settings remain available |
-| Controller | Native DualSense pairing and launcher navigation verified |
-| Cleanup | Package flags and selected service-stop conditions checked; a subset survives restart |
-| App preloading | Vendor refreshes can restore the preference; no permanent enforcement daemon |
-| Netflix | More available memory after closing background apps; perceived input lag **not yet confirmed fixed** |
+| ![Brief du matin](docs/screenshots/brief.jpg) **Brief du matin** — au premier allumage entre 5 h et 11 h : météo, métro, maison, électricité, Félix, Plex. | ![Météo](docs/screenshots/meteo.jpg) **Météo** — heure par heure (température, ressenti, pluie, vent) et 7 jours, avec source de secours. |
+| ![Trafic](docs/screenshots/metro.jpg) **Information trafic** — passages en temps réel à Bel-Air dans les deux sens, état des 16 lignes de métro et 5 RER. | ![Bourse](docs/screenshots/bourse.jpg) **Bourse** — CAC 40, Euro Stoxx 50, S&P 500, QQQ, NVIDIA, AMD, Micron, SanDisk, Alphabet, Apple, or, cuivre, EUR/USD ; graphique Jour à Max. |
+| ![Énergie](docs/screenshots/energie.jpg) **Énergie** — 30 derniers jours, coût, moyenne, mois en cours. | ![Système](docs/screenshots/systeme.jpg) **Système** — santé de la TV en direct. |
 
-The native launcher and underlying techniques were exercised on that TV.
-The **generalized scripts in this public release were checked locally and
-compiled where applicable; they have not been replayed end-to-end on a second
-TV**. This matters especially for private Samsung APIs and registry schemas.
+« Le saviez-vous ? » puise dans les anecdotes de la page d'accueil de Wikipédia (actuelles et archives), renouvelées chaque jour.
 
-## Walkthrough
+## Réglages et apparence
 
-1. [Understand compatibility and inventory the TV](docs/01-inventory.md).
-2. [Enable Developer Mode and check temporary access](docs/02-access.md).
-3. [Take snapshots and apply selected cleanup](docs/03-cleanup.md).
-4. [Build, install and assign Quiet Home](docs/04-launcher.md).
-5. [Pair a DualSense using the TV's Bluetooth support](docs/05-controller.md).
-6. [Customize apps, fetch artwork and keep it preloaded](docs/06-artwork.md).
-7. [Diagnose slow streaming apps without overclaiming](docs/07-performance.md).
-8. [Understand privacy findings](docs/08-privacy.md).
-9. [Restore the original experience](docs/09-recovery.md).
+![Réglages](docs/screenshots/reglages.jpg)
 
-Read [AGENTS.md](AGENTS.md) before using the tools. TV commands require a
-specific address and a verified firmware declaration. All downloaded
-proprietary references, local artwork, snapshots and session records stay
-under ignored paths.
+- Volume, **luminosité et contraste par paliers de 5**, **mode d'image** (Dynamique, Standard, Éco, Cinéma…) choisi directement, mode jeu, son, minuterie.
 
-## Development
+  ![Mode d'image](docs/screenshots/mode-image.jpg)
 
-Host tools use Python 3.12+ and the standard library. Raster artwork conversion
-optionally uses Pillow. Source builds use the .NET 6 SDK to match the tested
-TV; it is an older SDK and should be isolated from unrelated projects.
-Install Samsung's SDB separately.
+- **Thème** automatique (clair du lever au coucher du soleil à Paris), clair ou sombre ; 6 couleurs d'accent ; fonds d'écran Classique, Météo, Affiche Plex ou Aurore.
+- **Économiseur d'écran** pour l'OLED : horloge qui se déplace, météo, températures intérieures, métro.
 
-```sh
-python3 -m unittest discover -s tests -v
-python3 tools/build.py payloads
-# After obtaining the four private Tizen reference assemblies:
-python3 tools/build.py launcher --framework .local/tv-framework
+![Applis](docs/screenshots/applis.jpg)
+
+## Architecture
+
+```
+┌───────────────────────────┐   app-control    ┌──────────────────────────────┐
+│ Home (BixbyPromotion.dll) │ ───────────────▶ │ QuickLaunch (helper, réseau) │
+│ interface NUI, pas d'accès│ ◀─────────────── │ Home Assistant, météo, IDFM, │
+│ internet                  │   données JSON   │ franceinfo, Yahoo, Wikipédia │
+└───────────────────────────┘                  └──────────────────────────────┘
 ```
 
-GitHub Actions runs the offline tests and builds the open-source access
-payloads and app-catalog tests. The NUI launcher build needs Samsung reference
-assemblies and is deliberately not built from redistributed SDK files.
+- `launcher/src/Home.cs` — l'interface (pages, navigation télécommande, panneaux).
+- `launcher/src/QuickLaunch.cs` — l'assistant réseau : il interroge les services, met les images en cache et répond à l'interface. Il reste « chaud » 2 minutes pour des commandes instantanées.
+- Home Assistant pilote lampes, volets, scènes, Apple TV, Plex, Govee et Félix ; l'automatisation du mode cinéma vit dans Home Assistant.
 
-## Credits
+## Installer et déployer
 
-The visual design adapts [Free My TV](https://github.com/simbasjungles/free-my-tv);
-the temporary archive-launcher access route comes from
-[samsung-tv-root](https://github.com/chris-ritsen/samsung-tv-root).
-This is a native Tizen port of the visual approach, not an installation of
-the Android launcher. See [NOTICE.md](NOTICE.md) and
-[provenance](docs/provenance.md) for exact commits, licenses and local changes.
+La préparation de la TV (accès root, sauvegardes, nettoyage, installation du launcher, restauration) suit la documentation de Quiet Tizen : [docs/quiet-tizen.md](docs/quiet-tizen.md), puis `docs/01-inventory.md` à `docs/09-recovery.md`.
 
-Original project code is MIT-licensed. Third-party fonts, symbols and access
-code retain their own licenses. No Samsung firmware, stock app binaries,
-private TV backups or publisher app artwork is included.
+Compilation :
+
+```bash
+python3 tools/build.py launcher --dotnet <dotnet6> --framework <assemblies Tizen extraites de la TV>
+```
+
+Le déploiement remplace `BixbyPromotion.dll` et `QuickLaunch.dll` sur la TV (copie, puis redémarrage vérifié du processus). La configuration Home Assistant (URL, jeton) se place sur la TV dans `res/ha-config.json` de QuickLaunch et **n'est jamais versionnée**.
+
+## Données personnelles
+
+Ce dépôt ne contient ni jeton, ni adresse, ni identifiant d'appareil :
+
+- les fichiers propres à la maison (configuration Home Assistant, catalogues Govee avec adresses, captures brutes, sauvegardes) restent dans des chemins ignorés (`.local/`, `*.local.json`) ;
+- les logos d'éditeurs extraits de la TV ne sont pas inclus ;
+- les captures d'écran ci-dessus ont la carte, les prénoms et les adresses réseau floutés.
+
+## Crédits
+
+- [Quiet Tizen / Free My TV](docs/quiet-tizen.md) pour le launcher de base, les outils et la méthode — voir [NOTICE.md](NOTICE.md) et [docs/provenance.md](docs/provenance.md).
+- Données : Home Assistant, Open-Meteo et MET Norway, Île-de-France Mobilités, franceinfo, Yahoo Finance, Wikipédia, bibliothèque de scènes Govee.
+- Licence : voir [LICENSE](LICENSE).

@@ -46,6 +46,7 @@ public sealed class QuietHome : NUIApplication
  List<LibraryApp> library=new List<LibraryApp>();
  int libraryPage;
  string libraryError="";
+ TextLabel worldParis,worldBa;
  TextLabel clock, weatherPlace, weatherTemperature, weatherCondition, weatherRange, notice, detail;
  TextLabel metroStatus, metroNationTime, metroEtoileTime;
  TextLabel[] tabs;
@@ -146,6 +147,7 @@ public sealed class QuietHome : NUIApplication
  const string cinemaAuto="automation.belair_mode_cinema_plex";
  TextLabel cinemaState,felixState;View cinemaCard,cinemaDot;
  readonly List<EnergyDay> energyDays=new List<EnergyDay>();DateTime lastEnergyRequest=DateTime.MinValue;
+ List<string> facts;DateTime lastFactsRequest=DateTime.MinValue;
  readonly string[] randomFacts={
   "Paris compte 20 arrondissements. Le 12e s’étend de la Bastille au bois de Vincennes, l’un des plus grands espaces verts de la capitale.",
   "Une pieuvre a trois cœurs : deux envoient le sang vers les branchies et le troisième l’envoie dans le reste du corps.",
@@ -214,10 +216,10 @@ public sealed class QuietHome : NUIApplication
   LoadUsage();LoadPrefs();ApplyTheme();LoadGovee();
   Window.Default.Title="Quiet Home";Window.Default.KeyEvent+=OnKey;
   PreloadArtwork();
-  factIndex=new Random(Environment.TickCount).Next(randomFacts.Length);lastFactUpdate=DateTime.Now;
+  facts=new List<string>(randomFacts);factIndex=new Random(Environment.TickCount).Next(facts.Count);lastFactUpdate=DateTime.Now;
   RefreshSource();selected=SourceIndex();BuildPage();
   clockTimer=new Tizen.NUI.Timer(30000);
-  clockTimer.Tick+=(s,e)=>{if(clock!=null)clock.Text=DateTime.Now.ToString("HH:mm");if(briefClock!=null)briefClock.Text=DateTime.Now.ToString("HH:mm");if(WantDark()!=dark){ApplyTheme();BuildPage();}else if(prefWall==1&&WallKind()!=wallKind&&editing==""&&!coverPopupOpen)BuildPage();if(!isPaused&&ambientRoot==null&&briefRoot==null&&editing==""&&(DateTime.Now-lastInput).TotalSeconds>=AmbientDelay())OpenAmbient();RequestDue();UpdateHero();if(page==0&&!factDetailOpen&&DateTime.Now-lastFactUpdate>=TimeSpan.FromMinutes(30))RotateFact();return true;};clockTimer.Start();RequestHomeData();lastSensorRequest=DateTime.Now;RequestHaStates();MaybeBrief();WriteState("created");
+  clockTimer.Tick+=(s,e)=>{if(clock!=null)clock.Text=DateTime.Now.ToString("HH:mm");UpdateWorldClock();if(briefClock!=null)briefClock.Text=DateTime.Now.ToString("HH:mm");if(WantDark()!=dark){ApplyTheme();BuildPage();}else if(prefWall==1&&WallKind()!=wallKind&&editing==""&&!coverPopupOpen)BuildPage();if(!isPaused&&ambientRoot==null&&briefRoot==null&&editing==""&&(DateTime.Now-lastInput).TotalSeconds>=AmbientDelay())OpenAmbient();RequestDue();UpdateHero();if(page==0&&!factDetailOpen&&DateTime.Now-lastFactUpdate>=TimeSpan.FromMinutes(15))RotateFact();return true;};clockTimer.Start();RequestHomeData();lastSensorRequest=DateTime.Now;RequestHaStates();MaybeBrief();WriteState("created");
  }
  protected override void OnResume(){base.OnResume();isPaused=false;lastInput=DateTime.Now;clockTimer?.Start();if(tabs!=null&&WantDark()!=dark){ApplyTheme();BuildPage();}bool themeDue=WantDark()!=dark;if(themeDue)ApplyTheme();bool rebuild=(themeDue||usageDirty&&(page==0||page==1))&&tabs!=null;usageDirty=false;if(rebuild)BuildPage();if(page==6)StartSystemTimer();RefreshSource();if(tabs!=null&&page==2){RefreshSettings();UpdateFocus(false);}RequestDue();MaybeBrief();WriteState("resumed");}
  protected override void OnAppControlReceived(AppControlReceivedEventArgs e)
@@ -225,6 +227,7 @@ public sealed class QuietHome : NUIApplication
   base.OnAppControlReceived(e);
   string requested="";
   e.ReceivedAppControl.ExtraData.TryGet("quiet_page",out requested);
+  if(requested!=null&&requested.StartsWith("show:"))CloseOverlays();
   if(requested=="settings")OpenSettings("settings_request");
   else if(requested=="apps"){page=1;area=1;selected=0;BuildPage();}
   else if(requested!=null&&requested.StartsWith("show:news:")){ // test entry point: show:news:<section>[:<article>[:<page>]]
@@ -237,6 +240,7 @@ public sealed class QuietHome : NUIApplication
   else if(requested!=null&&requested.StartsWith("show:quote:")){var qp=requested.Substring(11).Split(':');int qi,qr=0;if(int.TryParse(qp[0],out qi)){if(qp.Length>1)int.TryParse(qp[1],out qr);page=0;area=1;BuildPage();OpenNewsMenu(3);quoteIndex=qi;quoteRange=Math.Max(0,Math.Min(5,qr));area=11;quoteDetailOpen=true;BuildPage();}}
   else if(requested!=null&&requested.StartsWith("show:light:")){page=5;area=1;selected=0;lightId=requested.Substring(11);lightOpen=true;lightRow=0;lightCol=0;BuildPage();}
   else if(requested!=null&&requested.StartsWith("show:catalog:")){page=5;area=1;selected=0;lightId=requested.Substring(13);lightOpen=true;catalogOpen=true;catIndex=0;catSel=0;catPage=0;catOnTabs=true;BuildPage();}
+  else if(requested!=null&&requested.StartsWith("show:cover:")){page=5;area=1;selected=0;coverPopupEntity=requested.Substring(11);coverPopupSel=2;coverPopupOpen=true;BuildPage();}
   else if(requested=="show:close"){CloseBrief(false);pictureOpen=false;cleanOpen=false;BuildPage();}
   else if(requested=="show:picture"){page=2;area=1;selected=3;BuildPage();OpenPicture();}
   else if(requested=="show:clean"){page=9;area=1;selected=0;cleanOpen=true;cleanRow=0;cleanCol=0;BuildPage();}
@@ -246,6 +250,7 @@ public sealed class QuietHome : NUIApplication
    if(e.ReceivedAppControl.ExtraData.TryGet("quiet_media",out value))ReceiveMedia(value);
    if(e.ReceivedAppControl.ExtraData.TryGet("quiet_felix",out value))ReceiveFelix(value);
    if(e.ReceivedAppControl.ExtraData.TryGet("quiet_series",out value))ReceiveSeries(value);
+   if(e.ReceivedAppControl.ExtraData.TryGet("quiet_facts",out value))ReceiveFacts(value);
   }
   else if(requested=="weather"||requested=="transit"||requested=="traffic"||requested=="data"||requested=="news"){
    string value;
@@ -267,7 +272,8 @@ public sealed class QuietHome : NUIApplication
   }else Home("home_request");
  }
  protected override void OnPause(){base.OnPause();isPaused=true;CloseAmbient();CloseBrief(false);pictureOpen=false;cleanOpen=false;lightOpen=false;catalogOpen=false;editing="";clockTimer?.Stop();systemTimer?.Stop();haRefreshTimer?.Stop();WriteState("paused");}
- void Home(string activity){clockTimer?.Start();RefreshSource();if(tabs!=null){bool unchanged=page==0&&area==1&&editing==""&&selected==SourceIndex()&&!newsMenuOpen&&!factDetailOpen;page=0;area=1;editing="";newsMenuOpen=false;newsDetailOpen=false;factDetailOpen=false;forecastDetailOpen=false;selectedForecastHour=-1;selectedForecastDay=-1;selected=SourceIndex();if(!unchanged)BuildPage();RequestDue();MaybeBrief();WriteState(activity);}}
+ void CloseOverlays(){newsMenuOpen=false;newsDetailOpen=false;quoteDetailOpen=false;factDetailOpen=false;forecastDetailOpen=false;lineDetailOpen=false;coverPopupOpen=false;lightOpen=false;catalogOpen=false;pictureOpen=false;cleanOpen=false;editing="";}
+ void Home(string activity){clockTimer?.Start();RefreshSource();if(tabs!=null){bool unchanged=page==0&&area==1&&editing==""&&selected==SourceIndex()&&!newsMenuOpen&&!factDetailOpen&&!lightOpen&&!coverPopupOpen&&!pictureOpen&&!cleanOpen;page=0;area=1;CloseOverlays();selectedForecastHour=-1;selectedForecastDay=-1;selected=SourceIndex();if(!unchanged)BuildPage();RequestDue();MaybeBrief();WriteState(activity);}}
  void OpenSettings(string activity){clockTimer?.Start();page=2;area=1;selected=0;editing="";newsMenuOpen=false;newsDetailOpen=false;factDetailOpen=false;forecastDetailOpen=false;selectedForecastHour=-1;selectedForecastDay=-1;BuildPage();WriteState(activity);}
  void RefreshSource(){try{int n;if(vconf_get_int("memory/system/source_type",out n)==0&&n==13)lastSource=n;}catch{}}
  int SourceIndex(){return 0;}
@@ -587,7 +593,7 @@ public sealed class QuietHome : NUIApplication
   if(focusAnimation!=null){focusAnimation.Stop();focusAnimation.Dispose();focusAnimation=null;}
   ClearWeatherAnimations();ClearRainAnimations();hourCards.Clear();dayCards.Clear();
   ParkArtwork();pageArtworkCold=0;
-  foreach(var v in scene){Window.Default.Remove(v);v.Dispose();}scene.Clear();slots.Clear();homeSensorValue=null;weatherGlyphs.Clear();weatherCard=null;weatherIcon=null;weatherSlotIndex=-1;metroCard=null;metroSlotIndex=-1;marketSlotIndex=-1;factSlotIndex=-1;newsButtonSlotIndex=-1;newsCategorySlotStart=-1;newsArticleSlotStart=-1;newsTopTitle=null;marketHeadline=null;marketValue=null;marketChange=null;marketTime=null;marketSub=null;marketChartHost=null;cinemaState=null;felixState=null;cinemaCard=null;cinemaDot=null;factBody=null;metroStatus=null;metroNationTime=null;metroEtoileTime=null;weatherPlace=null;weatherTemperature=null;weatherCondition=null;weatherRange=null;heroTop=null;heroTitle=null;heroSub=null;heroTime=null;heroArt=null;heroBar=null;heroFill=null;heroArtPath="";
+  foreach(var v in scene){Window.Default.Remove(v);v.Dispose();}scene.Clear();slots.Clear();homeSensorValue=null;weatherGlyphs.Clear();weatherCard=null;weatherIcon=null;weatherSlotIndex=-1;metroCard=null;metroSlotIndex=-1;marketSlotIndex=-1;factSlotIndex=-1;newsButtonSlotIndex=-1;newsCategorySlotStart=-1;newsArticleSlotStart=-1;newsTopTitle=null;marketHeadline=null;marketValue=null;marketChange=null;marketTime=null;marketSub=null;marketChartHost=null;cinemaState=null;felixState=null;cinemaCard=null;cinemaDot=null;factBody=null;metroStatus=null;metroNationTime=null;metroEtoileTime=null;weatherPlace=null;weatherTemperature=null;weatherCondition=null;weatherRange=null;heroTop=null;heroTitle=null;heroSub=null;heroTime=null;heroArt=null;heroBar=null;heroFill=null;heroArtPath="";worldParis=null;worldBa=null;
   AddWallpaper();
   var brandMark=Panel(80,22,27,27,accent,8);var brandLetter=Label("B",0,0,27,27,17,white,"Semibold");brandLetter.HorizontalAlignment=HorizontalAlignment.Center;brandMark.Add(brandLetter);
   Text("BelAir OS",118,20,150,31,19,muted,"Semibold");
@@ -639,7 +645,7 @@ public sealed class QuietHome : NUIApplication
   for(int i=0;i<dord.Count;i++)Dock(dk[dord[i]][0],dk[dord[i]][1],dk[dord[i]][2],i,dk.Length);
   }
   Toolbar("Applis","page:1","apps",0);Toolbar("Accueil","page:0","hdmi",1);Toolbar("Réglages","page:2","settings",2);
-  if(page==0)NewsDropdownButton();
+  if(page==0){NewsDropdownButton();WorldClock();}
   toolbarHint=Text("",1530,170,310,45,24,ink);toolbarHint.HorizontalAlignment=HorizontalAlignment.End;
   detail=Text("",80,1030,1320,35,20,muted);
   notice=Text("",80,1008,1760,34,22,accent);
@@ -1224,7 +1230,7 @@ public sealed class QuietHome : NUIApplication
   var card=Panel(x+w/2,y+h/2,w,h,new Color(0,0,0,0),20);card.PivotPoint=new Position(.5f,.5f,.5f);card.PositionUsesPivotPoint=true;
   card.Add(new ImageView{ResourceUrl=Root+"feature-fact-compact.svg",Size2D=new Size2D(w,h)});
   card.Add(Label("LE SAVIEZ-VOUS ?",23,22,330,34,23,white,"Semibold"));
-  factBody=Label(randomFacts[factIndex],23,55,360,114,15,white,"Medium");factBody.MultiLine=true;factBody.LineWrapMode=LineWrapMode.Word;factBody.Ellipsis=false;factBody.VerticalAlignment=VerticalAlignment.Top;card.Add(factBody);
+  factBody=Label(facts[factIndex],23,55,360,114,15,white,"Medium");factBody.MultiLine=true;factBody.LineWrapMode=LineWrapMode.Word;factBody.Ellipsis=false;factBody.VerticalAlignment=VerticalAlignment.Top;card.Add(factBody);
   card.Add(Label("OK · Lire le texte complet",23,169,370,25,15,new Color(1,.94f,.84f,1),"Medium"));
   factSlotIndex=slots.Count;
   slots.Add(new Slot{Card=card,Name="Le saviez-vous ?",Action="fact",Description="Une information aléatoire",Row=0,X=x,Y=y,W=w,H=h});
@@ -1234,19 +1240,26 @@ public sealed class QuietHome : NUIApplication
   Add(new View{Size2D=new Size2D(1920,1080),BackgroundColor=new Color(.03f,.05f,.09f,.72f)});
   var panel=Panel(330,196,1260,688,Sf(.99f,.99f,1,1),30);
   panel.Add(Label("LE SAVIEZ-VOUS ?",40,30,1180,40,21,muted,"Semibold"));
-  var body=Label(randomFacts[factIndex],40,104,1180,440,30,ink,"Medium");
+  var body=Label(facts[factIndex],40,104,1180,440,30,ink,"Medium");
   body.MultiLine=true;body.LineWrapMode=LineWrapMode.Word;body.Ellipsis=false;body.VerticalAlignment=VerticalAlignment.Top;panel.Add(body);
   panel.Add(Label("OK · fait suivant",40,590,1180,30,19,accent,"Semibold"));
   panel.Add(Label("Retour · accueil",40,628,1180,26,17,muted,"Medium"));
  }
+ // Anecdotes from French Wikipedia's "Le saviez-vous ?" (current ones plus archives), fetched daily by the helper.
+ void ReceiveFacts(string json)
+ {
+  try{using(var doc=JsonDocument.Parse(json)){var list=new List<string>();foreach(var f in doc.RootElement.EnumerateArray()){string t=f.GetString()??"";if(t.Length>=30)list.Add(t);}
+   if(list.Count>=10){facts=list;factIndex=Math.Min(factIndex,facts.Count-1);RotateFact();}}}catch{}
+  WriteState("facts_received:"+facts.Count);
+ }
  void RotateFact()
  {
-  if(randomFacts.Length<2)return;
+  if(facts.Count<2)return;
   var random=new Random(Environment.TickCount+factIndex);
   int next=factIndex;
-  while(next==factIndex)next=random.Next(randomFacts.Length);
+  while(next==factIndex)next=random.Next(facts.Count);
   factIndex=next;lastFactUpdate=DateTime.Now;
-  if(factDetailOpen)BuildPage();else if(factBody!=null)factBody.Text=randomFacts[factIndex];
+  if(factDetailOpen)BuildPage();else if(factBody!=null)factBody.Text=facts[factIndex];
   WriteState("fact_rotated:"+factIndex);
  }
  Slot Feature(string label,string action,string description,string asset,int x,int y,int w,int h,string shape)
@@ -1321,15 +1334,15 @@ public sealed class QuietHome : NUIApplication
   lampCards.Clear();lampDots.Clear();lampNames.Clear();lampStates.Clear();coverLabels.Clear();
   Text("Scènes",bx,230,760,40,30,ink,"Semibold");
   for(int i=0;i<haSceneId.Length;i++){
-   int x=bx+i*(w+g),y=272,sh=200;
+   int x=bx+i*(w+g),y=282,sh=200;
    var card=Panel(x+w/2,y+sh/2,w,sh,new Color(0,0,0,0),24);card.PivotPoint=new Position(.5f,.5f,.5f);card.PositionUsesPivotPoint=true;
    card.Add(new ImageView{ResourceUrl=Root+"ha-scene-"+haSceneIcon[i]+".svg",Size2D=new Size2D(w,sh)});
    var sn=Label(haSceneName[i],30,sh-64,w-60,52,32,white,"Semibold");sn.Ellipsis=false;card.Add(sn);
    slots.Add(new Slot{Card=card,Name="Scène "+haSceneName[i],Action="ha_scene:"+haSceneId[i],Description="OK pour activer",Row=0,X=x,Y=y,W=w,H=sh});
   }
-  Text("Volets",bx,490,760,40,30,ink,"Semibold");
+  Text("Volets",bx,494,760,40,30,ink,"Semibold");
   for(int i=0;i<haCoverId.Length;i++){
-   int x=bx+i*(w+g),y=530,chh=200;
+   int x=bx+i*(w+g),y=536,chh=200;
    var card=Panel(x+w/2,y+chh/2,w,chh,new Color(0,0,0,0),24);card.PivotPoint=new Position(.5f,.5f,.5f);card.PositionUsesPivotPoint=true;
    card.Add(new ImageView{ResourceUrl=Root+"ha-cover.svg",Size2D=new Size2D(w,chh)});
    card.Add(Label(haCoverName[i],28,24,w-170,40,27,white,"Semibold"));
@@ -1338,10 +1351,10 @@ public sealed class QuietHome : NUIApplication
    card.Add(Label("OK pour choisir l'ouverture",28,156,w-56,28,18,new Color(1,1,1,.72f),"Medium"));
    slots.Add(new Slot{Card=card,Label=val,Name="Volet "+haCoverName[i],Action="ha_cover:"+haCoverId[i],Description="OK pour régler la position",Row=1,X=x,Y=y,W=w,H=chh});
   }
-  Text("Lampes et appareils",bx,742,760,40,30,ink,"Semibold");
-  int lw=410,lh=72,lg=36;
+  Text("Lampes et appareils",bx,748,760,40,30,ink,"Semibold");
+  int lw=410,lh=62,lg=36;
   for(int i=0;i<haLampId.Length;i++){
-   int col=i%4,rowN=i/4,x=bx+col*(lw+lg),y=776+rowN*(lh+14);
+   int col=i%4,rowN=i/4,x=bx+col*(lw+lg),y=796+rowN*(lh+10);
    bool on=IsLampOn(haLampId[i]);
    var card=Panel(x+lw/2,y+lh/2,lw,lh,on?new Color(1f,.78f,.28f,.20f):new Color(1,1,1,.06f),16);card.PivotPoint=new Position(.5f,.5f,.5f);card.PositionUsesPivotPoint=true;
    var dotv=new View{Position2D=new Position2D(24,lh/2-9),Size2D=new Size2D(18,18),CornerRadius=new Vector4(9,9,9,9),BackgroundColor=on?new Color(1f,.80f,.30f,1):new Color(1,1,1,.22f)};card.Add(dotv);
@@ -1653,6 +1666,24 @@ public sealed class QuietHome : NUIApplication
   card.Add(new ImageView{ResourceUrl=Root+"glass-button.svg",Position2D=new Position2D(-16,-16),Size2D=new Size2D(100,112),Opacity=dark?.22f:1f});
   card.Add(new ImageView{ResourceUrl=Root+"symbol-"+icon+".png",Color=ink,Position2D=new Position2D(19,19),Size2D=new Size2D(30,30)});
   slots.Add(new Slot{Card=card,Name=label,Action=action,Description=label,Row=-1,X=x,Y=69,W=68,H=68});
+ }
+ // Paris (the TV's local time) and Buenos Aires (UTC-3 all year, Argentina has no daylight saving time).
+ void WorldClock()
+ {
+  int x=1124,y=80,w=440,h=64;
+  var card=Panel(x,y,w,h,Sf(1,1,1,.78f),32);
+  card.Add(Label("PARIS",28,0,90,h,15,muted,"Semibold"));
+  worldParis=Label("",96,0,110,h,26,ink,"Semibold");card.Add(worldParis);
+  card.Add(new View{Position2D=new Position2D(w/2-1,16),Size2D=new Size2D(2,h-32),BackgroundColor=Sf(.85f,.86f,.9f,1)});
+  card.Add(Label("BUENOS AIRES",w/2+20,0,124,h,15,muted,"Semibold"));
+  worldBa=Label("",w/2+136,0,76,h,26,ink,"Semibold");card.Add(worldBa);
+  UpdateWorldClock();
+ }
+ void UpdateWorldClock()
+ {
+  if(worldParis==null)return;
+  worldParis.Text=DateTime.Now.ToString("HH:mm");
+  worldBa.Text=DateTime.UtcNow.AddHours(-3).ToString("HH:mm");
  }
  void NewsDropdownButton()
  {
@@ -2570,7 +2601,7 @@ public sealed class QuietHome : NUIApplication
  string SensorState(string id){return haSensor.TryGetValue(id,out var v)?v:"";}
  void BuildDevices()
  {
-  int bx=86,lw=410,lh=72,lg=36,y=776+2*(lh+14);
+  int bx=86,lw=410,lh=62,lg=36,y=796+2*(lh+10);
   int x=bx+3*(lw+lg);
   cinemaCard=Panel(x+lw/2,y+lh/2,lw,lh,new Color(1,1,1,.06f),16);cinemaCard.PivotPoint=new Position(.5f,.5f,.5f);cinemaCard.PositionUsesPivotPoint=true;
   cinemaDot=new View{Position2D=new Position2D(24,lh/2-9),Size2D=new Size2D(18,18),CornerRadius=new Vector4(9,9,9,9)};cinemaCard.Add(cinemaDot);
@@ -2666,6 +2697,7 @@ public sealed class QuietHome : NUIApplication
    if(r==0)r=app_control_set_operation(c,"http://tizen.org/appcontrol/operation/default");
    if(r==0&&(media||hubs))r=app_control_add_extra_data(c,"quiet_media_request",hubs?"all":"now");
    if(r==0&&felixData)r=app_control_add_extra_data(c,"quiet_felix_request",live?"2":"1");
+   if(r==0&&DateTime.Now-lastFactsRequest>=TimeSpan.FromHours(6)){lastFactsRequest=DateTime.Now;r=app_control_add_extra_data(c,"quiet_facts_request","1");}
    if(r==0)r=app_control_send_launch_request(c,IntPtr.Zero,IntPtr.Zero);
   }finally{app_control_destroy(c);}}
  }
