@@ -100,6 +100,7 @@ public sealed class QuietHome : NUIApplication
  DateTime lastLinesRequest=DateTime.MinValue;
  DateTime linesUpdated=DateTime.MinValue;
  Tizen.NUI.Timer systemTimer;DateTime lastNetScan=DateTime.MinValue;
+ string guardStatus="Vérification en cours…";DateTime lastGuard=DateTime.MinValue;bool guardOk;
  string sysBuild="—",sysOs="—",sysHost="—",sysKernel="—",sysUptime="—";
  string sysIp="—",sysMac="—",sysIface="—",sysCpuModel="—",sysCpuPct="…",sysLoad="—";
  int sysCpuCores=0;long memTotalKb=0,memUsedKb=0;double memPct=0;ulong lastCpuTotal=0,lastCpuIdle=0;
@@ -188,6 +189,9 @@ public sealed class QuietHome : NUIApplication
  Color accent=new Color(0.24f,0.29f,0.72f,1);
  [DllImport("libsource-api.so")] static extern int connect_source(int sourceType);
  [DllImport("libvconf.so.0")] static extern int vconf_get_int(string key,out int value);
+ [DllImport("libvconf.so.0")] static extern int vconf_set_int(string key,int value);
+ [DllImport("libvconf.so.0")] static extern int vconf_get_bool(string key,out int value);
+ [DllImport("libvconf.so.0")] static extern int vconf_set_bool(string key,int value);
  [DllImport("libcapi-appfw-app-control.so.0")] static extern int app_control_create(out IntPtr app);
  [DllImport("libcapi-appfw-app-control.so.0")] static extern int app_control_set_app_id(IntPtr app,string id);
  [DllImport("libcapi-appfw-app-control.so.0")] static extern int app_control_set_operation(IntPtr app,string operation);
@@ -213,15 +217,15 @@ public sealed class QuietHome : NUIApplication
   base.OnCreate();
   try{fontLoaded=FontClient.Instance.AddCustomFontDirectory(Root+"fonts");}catch{fontLoaded=false;}
   try{library=AppLibrary.Load(Root+"apps.json");}catch(Exception ex){libraryError=ex.Message;}
-  LoadUsage();LoadPrefs();ApplyTheme();LoadGovee();
+  LoadUsage();LoadPrefs();ApplyTheme();LoadGovee();UpdateGuard();
   Window.Default.Title="Quiet Home";Window.Default.KeyEvent+=OnKey;
   PreloadArtwork();
   facts=new List<string>(randomFacts);factIndex=new Random(Environment.TickCount).Next(facts.Count);lastFactUpdate=DateTime.Now;
   RefreshSource();selected=SourceIndex();BuildPage();
   clockTimer=new Tizen.NUI.Timer(30000);
-  clockTimer.Tick+=(s,e)=>{if(clock!=null)clock.Text=DateTime.Now.ToString("HH:mm");UpdateWorldClock();if(briefClock!=null)briefClock.Text=DateTime.Now.ToString("HH:mm");if(WantDark()!=dark){ApplyTheme();BuildPage();}else if(prefWall==1&&WallKind()!=wallKind&&editing==""&&!coverPopupOpen)BuildPage();if(!isPaused&&ambientRoot==null&&briefRoot==null&&editing==""&&(DateTime.Now-lastInput).TotalSeconds>=AmbientDelay())OpenAmbient();RequestDue();UpdateHero();if(page==0&&!factDetailOpen&&DateTime.Now-lastFactUpdate>=TimeSpan.FromMinutes(15))RotateFact();return true;};clockTimer.Start();RequestHomeData();lastSensorRequest=DateTime.Now;RequestHaStates();MaybeBrief();WriteState("created");
+  clockTimer.Tick+=(s,e)=>{if(clock!=null)clock.Text=DateTime.Now.ToString("HH:mm");UpdateWorldClock();if(DateTime.Now-lastGuard>=TimeSpan.FromMinutes(10))UpdateGuard();if(briefClock!=null)briefClock.Text=DateTime.Now.ToString("HH:mm");if(WantDark()!=dark){ApplyTheme();BuildPage();}else if(prefWall==1&&WallKind()!=wallKind&&editing==""&&!coverPopupOpen)BuildPage();if(!isPaused&&ambientRoot==null&&briefRoot==null&&editing==""&&(DateTime.Now-lastInput).TotalSeconds>=AmbientDelay())OpenAmbient();RequestDue();UpdateHero();if(page==0&&!factDetailOpen&&DateTime.Now-lastFactUpdate>=TimeSpan.FromMinutes(15))RotateFact();return true;};clockTimer.Start();RequestHomeData();lastSensorRequest=DateTime.Now;RequestHaStates();MaybeBrief();WriteState("created");
  }
- protected override void OnResume(){base.OnResume();isPaused=false;lastInput=DateTime.Now;clockTimer?.Start();if(tabs!=null&&WantDark()!=dark){ApplyTheme();BuildPage();}bool themeDue=WantDark()!=dark;if(themeDue)ApplyTheme();bool rebuild=(themeDue||usageDirty&&(page==0||page==1))&&tabs!=null;usageDirty=false;if(rebuild)BuildPage();if(page==6)StartSystemTimer();RefreshSource();if(tabs!=null&&page==2){RefreshSettings();UpdateFocus(false);}RequestDue();MaybeBrief();WriteState("resumed");}
+ protected override void OnResume(){base.OnResume();isPaused=false;lastInput=DateTime.Now;clockTimer?.Start();UpdateGuard();if(tabs!=null&&WantDark()!=dark){ApplyTheme();BuildPage();}bool themeDue=WantDark()!=dark;if(themeDue)ApplyTheme();bool rebuild=(themeDue||usageDirty&&(page==0||page==1))&&tabs!=null;usageDirty=false;if(rebuild)BuildPage();if(page==6)StartSystemTimer();RefreshSource();if(tabs!=null&&page==2){RefreshSettings();UpdateFocus(false);}RequestDue();MaybeBrief();WriteState("resumed");}
  protected override void OnAppControlReceived(AppControlReceivedEventArgs e)
  {
   base.OnAppControlReceived(e);
@@ -871,6 +875,32 @@ public sealed class QuietHome : NUIApplication
   panel.Add(Label(key,36,y,284,36,22,muted,"Medium"));
   var v=Label(val,326,y,518,36,22,ink,"Semibold");panel.Add(v);return v;
  }
+ // ---- update guard: keep the firmware and app auto-updates off (an update could replace BelAir OS or close the root access) ----
+ const string fwAutoKey="db/menu/support/softwareupdate/autoupdate",appsAutoKey="db/apps/auto_update";
+ void UpdateGuard()
+ {
+  lastGuard=DateTime.Now;var notes=new List<string>();bool fwOff=false,appsOff=false;
+  try{
+   int fw;if(vconf_get_int(fwAutoKey,out fw)==0){
+    if(fw!=0){bool done=false;try{done=CSharpSetItemValue("autoupdate","0");}catch{}int again;if(!(vconf_get_int(fwAutoKey,out again)==0&&again==0))done=vconf_set_int(fwAutoKey,0)==0;notes.Add("firmware réactivé → "+(done?"recoupé":"échec"));}
+    fwOff=vconf_get_int(fwAutoKey,out fw)==0&&fw==0;
+   }else notes.Add("firmware illisible");
+  }catch(Exception ex){notes.Add("firmware: "+ex.GetType().Name);}
+  try{
+   int apps;if(vconf_get_bool(appsAutoKey,out apps)==0){
+    if(apps!=0){bool done=vconf_set_bool(appsAutoKey,0)==0;notes.Add("applis réactivées → "+(done?"recoupé":"échec"));}
+    appsOff=vconf_get_bool(appsAutoKey,out apps)==0&&apps==0;
+   }else notes.Add("applis illisible");
+  }catch(Exception ex){notes.Add("applis: "+ex.GetType().Name);}
+  guardOk=fwOff&&appsOff;
+  guardStatus=(guardOk?"Désactivées (TV et applis)":"⚠ "+(fwOff?"":"TV ")+(appsOff?"":"applis ")+"actives")+" · vérifié à "+lastGuard.ToString("HH:mm");
+  try{
+   string line=lastGuard.ToString("yyyy-MM-dd HH:mm:ss")+" firmware="+(fwOff?"off":"ON")+" apps="+(appsOff?"off":"ON")+(notes.Count>0?" · "+string.Join(" · ",notes):"");
+   string path="/tmp/quiet-update-guard.txt";var lines=File.Exists(path)?new List<string>(File.ReadAllLines(path)):new List<string>();lines.Add(line);
+   File.WriteAllLines(path,lines.Count>30?lines.GetRange(lines.Count-30,30):lines);
+  }catch{}
+  if(page==6&&tabs!=null&&notes.Count>0)BuildPage();
+ }
  void BuildSystemInfo()
  {
   CollectSystemInfo();
@@ -898,6 +928,8 @@ public sealed class QuietHome : NUIApplication
   sysMemVal=Label("",36,80,778,40,24,ink,"Semibold");M.Add(sysMemVal);
   UsageBar(M,36,142,778,memPct,out sysMemFill);
   M.Add(Label("Utilisée = total − disponible",36,176,778,32,20,muted,"Medium"));
+  M.Add(Label("Mises à jour automatiques",36,220,330,32,21,muted,"Medium"));
+  var gs=Label(guardStatus,360,220,454,32,21,guardOk?new Color(.13f,.55f,.3f,1):new Color(.85f,.25f,.2f,1),"Semibold");gs.HorizontalAlignment=HorizontalAlignment.End;M.Add(gs);
   var S=Panel(80,818,1760,208,Sf(1,1,1,.96f),24);
   S.Add(Label("Stockage",36,20,500,40,27,ink,"Semibold"));
   if(sysParts.Count==0)S.Add(Label("Informations de stockage indisponibles.",36,96,900,36,22,muted,"Medium"));
