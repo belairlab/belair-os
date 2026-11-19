@@ -61,6 +61,7 @@ public sealed class QuietHome : NUIApplication
  static readonly string[] haLampId={"light.salon_lampe_entree","light.salon_lampe_musique","light.chambre_lampadaire","light.chambre_lampe_de_chevet_gauche","light.chambre_lampe_de_chevet_droite","light.bureau_lampadaire","light.couloir_couloir","switch.grillplats_plug","light.cuisine","light.salon_neon_rope_light","light.bureau_lantern_floor_lamp"};
  static readonly string[] haLampName={"Salon · Entrée","Salon · Musique","Chambre · Lampadaire","Chambre · Gauche","Chambre · Droite","Bureau","Couloir","Lampe Orange","Cuisine","Salon · Néon","Bureau · Lanterne"};
  const string cuisineGroup="light.cuisine";
+ static readonly HashSet<string> goveeLamps=new HashSet<string>{"light.salon_neon_rope_light","light.bureau_lantern_floor_lamp"};
  readonly HashSet<string> colorLights=new HashSet<string>();readonly Dictionary<string,int> lightBri=new Dictionary<string,int>();
  readonly Dictionary<string,string> lightEffect=new Dictionary<string,string>();readonly Dictionary<string,string[]> lightEffects=new Dictionary<string,string[]>();
  bool lightOpen;string lightId="";int lightRow,lightCol;
@@ -1630,7 +1631,7 @@ public sealed class QuietHome : NUIApplication
    else if(!HaRecent(id,4)){
     haLampState[id]=st??"";
     if(el.TryGetProperty("color",out var cl)&&cl.ValueKind==JsonValueKind.True){
-     colorLights.Add(id);
+     if(goveeLamps.Contains(id))colorLights.Add(id); // only the Govee lamps get the scene panel; other colour lamps (IKEA) stay plain on/off
      if(el.TryGetProperty("bri",out var bv)&&bv.ValueKind==JsonValueKind.Number)lightBri[id]=bv.GetInt32();
      lightEffect[id]=el.TryGetProperty("effect",out var ev)&&ev.ValueKind==JsonValueKind.String?ev.GetString()??"":"";
      if(el.TryGetProperty("effects",out var es)&&es.ValueKind==JsonValueKind.Array){var list=new List<string>();foreach(var x in es.EnumerateArray())list.Add(x.GetString()??"");lightEffects[id]=list.ToArray();}
