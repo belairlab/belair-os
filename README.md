@@ -100,7 +100,7 @@ Tout passe par **Home Assistant** (local en priorité, accès distant en secours
 ```
 
 - `launcher/src/Home.cs` — l'interface (pages, navigation télécommande, panneaux).
-- `launcher/src/QuickLaunch.cs` — l'assistant réseau : il interroge les services, met les images en cache et répond à l'interface. Il reste « chaud » 2 minutes pour des commandes instantanées.
+- `launcher/src/QuickLaunch.cs` — l'assistant réseau : il interroge les services, met les images en cache et répond à l'interface. Il reste actif 10 minutes et ouvre la connexion Home Assistant dès son démarrage ; les commandes ont leur propre file et ne patientent jamais derrière une lecture des états.
 - Home Assistant pilote lampes, volets, scènes, Apple TV, Plex, Govee et Félix ; l'automatisation du mode cinéma vit dans Home Assistant.
 
 ## Installer et déployer

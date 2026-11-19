@@ -33,9 +33,13 @@ public sealed class QuickLaunch : NUIApplication {
  [DllImport("libcapi-appfw-app-control.so.0")] static extern int app_control_add_extra_data(IntPtr c,string key,string val);
  [DllImport("libcapi-appfw-app-control.so.0")] static extern int app_control_send_launch_request(IntPtr c,IntPtr cb,IntPtr data);
  [DllImport("libcapi-appfw-app-control.so.0")] static extern int app_control_destroy(IntPtr c);
- protected override void OnCreate(){base.OnCreate();Window.Default.Hide();try{sharedRoot=DirectoryInfo.SharedTrusted;}catch{}}
+ protected override void OnCreate(){base.OnCreate();Window.Default.Hide();try{sharedRoot=DirectoryInfo.SharedTrusted;}catch{}
+  // Open the Home Assistant connection now: the first TLS handshake and JIT otherwise land on the first button press.
+  Task.Run(()=>{try{var sw=Stopwatch.StartNew();HaStatesJson("");Tlog("warmup "+sw.ElapsedMilliseconds+"ms");}catch{}});}
+ static readonly DateTime procStart=Process.GetCurrentProcess().StartTime;
+ static void Tlog(string m){try{var f="/tmp/quiet-ha-timing.txt";if(File.Exists(f)&&new FileInfo(f).Length>40000)File.Delete(f);File.AppendAllText(f,DateTime.Now.ToString("HH:mm:ss.fff")+" "+m+"\n");}catch{}}
  protected override void OnAppControlReceived(AppControlReceivedEventArgs e){
-  base.OnAppControlReceived(e);string kind;bool preload=e.ReceivedAppControl.ExtraData.TryGet("launch_type",out kind)&&kind=="preload";
+  base.OnAppControlReceived(e);Tlog("recv up="+(int)(DateTime.Now-procStart).TotalMilliseconds+"ms");string kind;bool preload=e.ReceivedAppControl.ExtraData.TryGet("launch_type",out kind)&&kind=="preload";
   string articleUrl;
   if(e.ReceivedAppControl.ExtraData.TryGet("quiet_article_request",out articleUrl)&&!string.IsNullOrEmpty(articleUrl)){
    haLast=DateTime.UtcNow;System.Threading.Interlocked.Increment(ref haBusy);string au=articleUrl;
@@ -97,16 +101,21 @@ public sealed class QuickLaunch : NUIApplication {
    haLast=DateTime.UtcNow;System.Threading.Interlocked.Increment(ref haBusy);
    string d=haDomain,sv=haService,en=haEntity,ps=hasPos?haPos:null,bt=wantBatch?haBatch:null,sn=haSens;bool ws=wantStates,wa=wantAction;
    // No app_launcher here: from the app sandbox it only timed out (focus=-1, up to 3 s); the reply app-control resumes Home.
-   Task.Run(()=>{try{lock(haLock){
+   // Commands keep their own queue (in order) so they never wait behind a state read.
+   Task.Run(()=>{try{
     bool ok=true;
-    if(wa){
-     string body=ps!=null?("{\"entity_id\":\""+en+"\",\"position\":"+ps+"}"):("{\"entity_id\":\""+en+"\"}");
-     ok=HaPost("/api/services/"+d+"/"+sv,body);
+    if(wa||bt!=null)lock(actLock){
+     if(wa){
+      string body=ps!=null?("{\"entity_id\":\""+en+"\",\"position\":"+ps+"}"):("{\"entity_id\":\""+en+"\"}");
+      ok=HaPost("/api/services/"+d+"/"+sv,body);
+     }
+     if(bt!=null)ok=HaBatch(bt)&&ok;
     }
-    if(bt!=null)ok=HaBatch(bt)&&ok;
-    string data=ws?HaStatesJson(sn):null;
+    string data=null;var sw=Stopwatch.StartNew();
+    if(ws)lock(haLock)data=HaStatesJson(sn);
+    if(ws)Tlog("states "+sw.ElapsedMilliseconds+"ms bytes="+(data==null?0:data.Length));
     ReplyHa(data,(wa||bt!=null)?(ok?"ok":"fail"):null);
-   }}catch{}finally{haLast=DateTime.UtcNow;System.Threading.Interlocked.Decrement(ref haBusy);}});
+   }catch{}finally{haLast=DateTime.UtcNow;System.Threading.Interlocked.Decrement(ref haBusy);}});
    KeepWarm();return;
   }
   string weatherRequest,metroRequest,trafficRequest,newsRequest;
@@ -145,9 +154,9 @@ public sealed class QuickLaunch : NUIApplication {
   try{File.WriteAllText("/tmp/quiet-home-bridge.txt",DateTime.UtcNow.ToString("o")+"\npreload="+preload+"\nresult="+result+"\n");}catch{}
   if(idleTimer==null)Exit(); // when warm, the idle timer ends the process once in-flight work is done
  }
- void KeepWarm(){if(idleTimer!=null)return;idleTimer=new Tizen.NUI.Timer(15000);idleTimer.Tick+=(o,a)=>{if(haBusy==0&&(DateTime.UtcNow-haLast).TotalSeconds>=120){Exit();return false;}return true;};idleTimer.Start();}
+ void KeepWarm(){if(idleTimer!=null)return;idleTimer=new Tizen.NUI.Timer(15000);idleTimer.Tick+=(o,a)=>{if(haBusy==0&&(DateTime.UtcNow-haLast).TotalSeconds>=600){Exit();return false;}return true;};idleTimer.Start();}
  static string[] haUrls; static string haToken;
- static readonly object haLock=new object(); static DateTime haLast=DateTime.UtcNow; static int haBusy; static HttpClient haClient; Tizen.NUI.Timer idleTimer;
+ static readonly object haLock=new object(),actLock=new object(),clientLock=new object(); static DateTime haLast=DateTime.UtcNow; static int haBusy; static HttpClient haClient; Tizen.NUI.Timer idleTimer;
  static void LoadHaConfig(){
   if(haUrls!=null)return;
   try{using(var doc=JsonDocument.Parse(File.ReadAllText("/opt/usr/apps/com.samsung.tv.quicklaunch/res/ha-config.json"))){
@@ -158,12 +167,14 @@ public sealed class QuickLaunch : NUIApplication {
   }}catch{haUrls=new string[0];haToken="";}
  }
  static HttpClient HaClient(){
+  lock(clientLock){
   if(haClient!=null)return haClient;
   var h=new HttpClientHandler();
   h.ServerCertificateCustomValidationCallback=(m,c,ch,er)=>true; // owner-authorised: local HA on the LAN uses a hostname-mismatched/self-signed certificate
   var cl=new HttpClient(h);cl.Timeout=TimeSpan.FromSeconds(6);
   cl.DefaultRequestHeaders.Authorization=new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer",haToken);
   haClient=cl;return cl;
+  }
  }
  static string HaGet(string path){
   LoadHaConfig();
@@ -172,7 +183,7 @@ public sealed class QuickLaunch : NUIApplication {
  }
  static bool HaPost(string path,string body){
   LoadHaConfig();
-  foreach(var b in haUrls){try{{var cl=HaClient();var ct=new StringContent(body,System.Text.Encoding.UTF8,"application/json");var resp=cl.PostAsync(b+path,ct).GetAwaiter().GetResult();if(resp.IsSuccessStatusCode)return true;}}catch{}}
+  foreach(var b in haUrls){var sw=Stopwatch.StartNew();try{{var cl=HaClient();var ct=new StringContent(body,System.Text.Encoding.UTF8,"application/json");var resp=cl.PostAsync(b+path,ct).GetAwaiter().GetResult();Tlog("post "+path+" "+(int)resp.StatusCode+" "+sw.ElapsedMilliseconds+"ms");if(resp.IsSuccessStatusCode)return true;}}catch(Exception x){Tlog("post "+path+" fail "+sw.ElapsedMilliseconds+"ms "+x.GetType().Name);}}
   return false;
  }
  static string HaPostJson(string path,string body){
@@ -198,7 +209,7 @@ public sealed class QuickLaunch : NUIApplication {
    if(!HaCallAllowed(path,body)){all=false;continue;}
    int wait=call.TryGetProperty("w",out var w)&&w.ValueKind==JsonValueKind.Number?w.GetInt32():(n>0?1500:0);n++;
    if(wait>0)System.Threading.Thread.Sleep(Math.Min(wait,15000));
-   bool ok;lock(haLock)ok=HaPost("/api/services/"+path,body.GetRawText());
+   bool ok;lock(actLock)ok=HaPost("/api/services/"+path,body.GetRawText());
    if(!ok)all=false;
   }}}catch{all=false;}
   return all;
@@ -274,8 +285,8 @@ public sealed class QuickLaunch : NUIApplication {
  static string HaStatesJson(string sensors){
   string json=HaGet("/api/states");if(json==null)return null;
   var patterns=string.IsNullOrEmpty(sensors)?new string[0]:sensors.Split(',');
-  var items=new List<object>();
-  try{using(var doc=JsonDocument.Parse(json))foreach(var s in doc.RootElement.EnumerateArray()){
+  var ms=new MemoryStream();
+  try{using(var w=new Utf8JsonWriter(ms)){w.WriteStartArray();using(var doc=JsonDocument.Parse(json))foreach(var s in doc.RootElement.EnumerateArray()){
    string id=s.GetProperty("entity_id").GetString();if(id==null)continue;
    if(!(id.StartsWith("cover.")||id.StartsWith("light.")||id.StartsWith("switch.")||SensorWanted(id,patterns)))continue;
    string state=s.TryGetProperty("state",out var st)?st.GetString():"";
@@ -285,11 +296,12 @@ public sealed class QuickLaunch : NUIApplication {
    if(id.StartsWith("light.")&&s.TryGetProperty("attributes",out var la)&&la.TryGetProperty("supported_color_modes",out var cm)&&cm.ValueKind==JsonValueKind.Array&&cm.EnumerateArray().Any(m=>m.GetString()!="onoff"&&m.GetString()!="brightness")){
     int bri=la.TryGetProperty("brightness",out var b)&&b.ValueKind==JsonValueKind.Number?b.GetInt32():-1;
     var effects=la.TryGetProperty("effect_list",out var el)&&el.ValueKind==JsonValueKind.Array?el.EnumerateArray().Select(x=>x.GetString()??"").Where(x=>x!=""&&x!="none").ToArray():new string[0];
-    items.Add(new{entity=id,state=state,pos=pos,bri=bri,effect=Str(la,"effect"),effects=effects,color=true});continue;
+    w.WriteStartObject();w.WriteString("entity",id);w.WriteString("state",state);w.WriteNumber("pos",pos);w.WriteNumber("bri",bri);w.WriteString("effect",Str(la,"effect"));
+    w.WriteStartArray("effects");foreach(var x in effects)w.WriteStringValue(x);w.WriteEndArray();w.WriteBoolean("color",true);w.WriteEndObject();continue;
    }
-   items.Add(new{entity=id,state=state,pos=pos});
-  }}catch{return null;}
-  return JsonSerializer.Serialize(items);
+   w.WriteStartObject();w.WriteString("entity",id);w.WriteString("state",state);w.WriteNumber("pos",pos);w.WriteEndObject();
+  }w.WriteEndArray();}}catch{return null;}
+  return System.Text.Encoding.UTF8.GetString(ms.ToArray());
  }
  static int ReplyHa(string data,string result){
   IntPtr c;int r=app_control_create(out c);if(r!=0)return r;

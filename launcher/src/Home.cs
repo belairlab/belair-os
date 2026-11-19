@@ -269,7 +269,7 @@ public sealed class QuietHome : NUIApplication
   }else if(requested=="article"){
    string value;if(e.ReceivedAppControl.ExtraData.TryGet("quiet_article",out value))ReceiveArticle(value);
   }else if(requested=="ha"){
-   string value;
+   string value;HTlog("reply ha data="+e.ReceivedAppControl.ExtraData.TryGet("quiet_ha_data",out value));
    if(e.ReceivedAppControl.ExtraData.TryGet("quiet_ha_data",out value))ReceiveHaData(value);
    if(e.ReceivedAppControl.ExtraData.TryGet("quiet_ha_result",out value)&&value=="fail"){ShowError("Commande maison échouée.");haCmdAt.Clear();RequestHaStates();}
    UpdateBrief();
@@ -1642,6 +1642,7 @@ public sealed class QuietHome : NUIApplication
   UpdateHomeSensors();UpdateDevices();
   WriteState("ha_data");
  }
+ static void HTlog(string m){try{var f="/tmp/quiet-home-timing.txt";if(File.Exists(f)&&new FileInfo(f).Length>40000)File.Delete(f);File.AppendAllText(f,DateTime.Now.ToString("HH:mm:ss.fff")+" "+m+"\n");}catch{}}
  void SendHaAction(string domain,string service,string entity)
  {
   IntPtr c;int r=app_control_create(out c);
@@ -1651,7 +1652,9 @@ public sealed class QuietHome : NUIApplication
    if(r==0)r=app_control_add_extra_data(c,"quiet_ha_domain",domain);
    if(r==0)r=app_control_add_extra_data(c,"quiet_ha_service",service);
    if(r==0)r=app_control_add_extra_data(c,"quiet_ha_entity",entity);
+   var sw=System.Diagnostics.Stopwatch.StartNew();
    if(r==0)r=app_control_send_launch_request(c,IntPtr.Zero,IntPtr.Zero);
+   HTlog("send "+service+" "+entity+" "+sw.ElapsedMilliseconds+"ms r="+r);
   }finally{app_control_destroy(c);}}
   HaCommanded(entity);
   if(r!=0)ShowError("Commande maison indisponible.");
