@@ -205,7 +205,7 @@ public sealed class QuickLaunch : NUIApplication {
   string entity=Str(body,"entity_id");
   if(path=="select/select_option")return entity=="select.felix_mode_de_nettoyage";
   if(path.StartsWith("vacuum/"))return entity=="vacuum.felix";
-  if(path=="media_player/play_media"||path=="media_player/turn_on")return entity=="media_player.appletv_appletv";
+  if(path=="media_player/play_media"||path=="media_player/turn_on"||path=="media_player/select_source")return entity=="media_player.appletv_appletv";
   if(path=="remote/send_command")return entity=="remote.appletv_appletv";
   if(path=="light/turn_on"||path=="light/turn_off")return entity.StartsWith("light.");
   return false;

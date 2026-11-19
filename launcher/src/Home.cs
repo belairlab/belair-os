@@ -648,7 +648,7 @@ public sealed class QuietHome : NUIApplication
   }else if(page==3)BuildForecast();else if(page==4)BuildMetroDetail();else if(page==6)BuildSystemInfo();else if(page==7)BuildEnergy();else if(page==8)BuildPlex();else if(page==9)BuildFelix();else BuildHomeAssistant();
   if(page==0){
   Add(new ImageView{ResourceUrl=Root+"glass-shelf.svg",Position2D=new Position2D(80,842),Size2D=new Size2D(1760,172),Opacity=dark?.16f:1f});
-  var dk=new[]{new[]{"Netflix","app:org.tizen.netflix-app","netflix"},new[]{"YouTube","app:com.samsung.tv.cobalt-yt","youtube"},new[]{"CANAL+","app:QmpwflxWdt.CanalPlusLauncher","canal-plus"},new[]{"Plex","app:kIciSQlYEM.plex","plex"},new[]{"Prime Video","app:org.tizen.primevideo","prime"},new[]{"Apple TV","app:com.samsung.tv.aria-video","apple-tv"},new[]{"France 2 en direct","channel:france-2","france-2"}};
+  var dk=new[]{new[]{"Netflix","atv:org.tizen.netflix-app:Netflix","netflix"},new[]{"YouTube","atv:com.samsung.tv.cobalt-yt:YouTube","youtube"},new[]{"CANAL+","atv:QmpwflxWdt.CanalPlusLauncher:CANAL+","canal-plus"},new[]{"Plex","atv:kIciSQlYEM.plex:Plex","plex"},new[]{"Prime Video","atv:org.tizen.primevideo:Prime Video","prime"},new[]{"Apple TV","atv:com.samsung.tv.aria-video:TV","apple-tv"},new[]{"France 2 en direct","channel:france-2","france-2"}};
   var dord=new List<int>();for(int i=0;i<dk.Length;i++)dord.Add(i);dord.Sort((x,y)=>{int ux=Use(UsageKey(dk[x][1])),uy=Use(UsageKey(dk[y][1]));return ux!=uy?uy-ux:x-y;});
   for(int i=0;i<dord.Count;i++)Dock(dk[dord[i]][0],dk[dord[i]][1],dk[dord[i]][2],i,dk.Length);
   }
@@ -1318,7 +1318,25 @@ public sealed class QuietHome : NUIApplication
    +"<rect x=\".5\" y=\".5\" width=\""+(w-1)+"\" height=\""+(h-1)+"\" rx=\"21.5\" fill=\"none\" stroke=\"#000\" stroke-opacity=\".10\" stroke-width=\"1\"/></svg>";
   return WallFile("dock-glass-"+w+"x"+h,svg);
  }
- static string UsageKey(string action){return action.StartsWith("app:")?action.Substring(4):action;}
+ static string UsageKey(string action){if(action.StartsWith("atv:")){int c=action.IndexOf(':',4);return c>4?action.Substring(4,c-4):action;}return action.StartsWith("app:")?action.Substring(4):action;}
+ // Dock shortcuts open the same app on the Apple TV (Home Assistant "select_source"), then switch the TV to its HDMI input.
+ void LaunchOnAppleTv(string action)
+ {
+  int c=action.IndexOf(':',4);if(c<0)return;string source=action.Substring(c+1);
+  BumpUsage(UsageKey(action));
+  string atv="media_player.appletv_appletv",esc=source.Replace("\\","\\\\").Replace("\"","\\\"");
+  string calls="[{\"p\":\"media_player/turn_on\",\"b\":{\"entity_id\":\""+atv+"\"},\"w\":0},{\"p\":\"media_player/select_source\",\"b\":{\"entity_id\":\""+atv+"\",\"source\":\""+esc+"\"},\"w\":300}]";
+  IntPtr ac;int r=app_control_create(out ac);
+  if(r==0){try{
+   r=app_control_set_app_id(ac,"com.samsung.tv.quicklaunch");
+   if(r==0)r=app_control_set_operation(ac,"http://tizen.org/appcontrol/operation/default");
+   if(r==0)r=app_control_add_extra_data(ac,"quiet_ha_calls_silent",calls);
+   if(r==0)r=app_control_send_launch_request(ac,IntPtr.Zero,IntPtr.Zero);
+  }finally{app_control_destroy(ac);}}
+  if(r!=0){ShowError("Commande Apple TV indisponible.");return;}
+  notice.Text=(source=="TV"?"Apple TV":source)+" sur l’Apple TV…";WriteState("atv:"+source);
+  SelectSource(13);
+ }
  void Dock(string label,string action,string icon,int n,int count)
  {
   int H=120,G=count>6?30:40,W=(6*244+5*40-(count-1)*G)/count,total=count*W+(count-1)*G,startX=(1920-total)/2;
@@ -2290,6 +2308,7 @@ public sealed class QuietHome : NUIApplication
   if(a.StartsWith("page:")){page=int.Parse(a.Substring(5));selected=page==0?SourceIndex():0;area=1;BuildPage();return;}
   if(a.StartsWith("app:")){BumpUsage(a.Substring(4));Launch(a.Substring(4));return;}
   if(a.StartsWith("channel:")){StartChannel(a.Substring(8));return;}
+  if(a.StartsWith("atv:")){LaunchOnAppleTv(a);return;}
   if(a.StartsWith("ha_scene:")){string sc=a.Substring(9);if(sc=="scene.film"||sc=="scene.pause"){bool kon=sc=="scene.pause";string svc=kon?"turn_on":"turn_off";haLampState[cuisineGroup]=kon?"on":"off";SendHaBatch("[{\"d\":\"scene\",\"s\":\"turn_on\",\"e\":\""+sc+"\"},{\"d\":\"light\",\"s\":\""+svc+"\",\"e\":\""+cuisineGroup+"\"}]");SetLampVisual(cuisineGroup);}else SendHaAction("scene","turn_on",sc);notice.Text="Scène activée";return;}
   if(a.StartsWith("ha_cover:")){coverPopupEntity=a.Substring(9);int cp=CoverPos(coverPopupEntity);int[] prs={0,25,50,75,100};coverPopupSel=0;for(int i=1;i<prs.Length;i++)if(Math.Abs(prs[i]-cp)<Math.Abs(prs[coverPopupSel]-cp))coverPopupSel=i;coverPopupOpen=true;notice.Text="";BuildPage();return;}
   if(a.StartsWith("ha_vac:")){string svc=a.Substring(7);SendHaAction("vacuum",svc,"vacuum.felix");string msg=svc=="start"?"Démarrage…":svc=="pause"?"Mise en pause…":"Retour à la base…";if(felixState!=null)felixState.Text=msg;notice.Text="Félix · "+msg;FelixSoon();return;}

@@ -24,7 +24,7 @@ Il est construit sur [Quiet Tizen](docs/quiet-tizen.md) (launcher natif NUI/C#, 
 
 | Onglet | Contenu |
 |---|---|
-| **Accueil** | Tuile Apple TV avec ce qui est en lecture (affiche, progression, temps restant), Bourse CAC 40, « Le saviez-vous ? », métro 6 en temps réel, météo, températures intérieures, électricité, heure de Paris et de Buenos Aires, dock d'applis (dont **France 2 en direct**) |
+| **Accueil** | Tuile Apple TV avec ce qui est en lecture (affiche, progression, temps restant), Bourse CAC 40, « Le saviez-vous ? », métro 6 en temps réel, météo, températures intérieures, électricité, heure de Paris et de Buenos Aires, dock d'applis qui s'ouvrent directement sur l'Apple TV (dont **France 2 en direct**) |
 | **Applis** | Toutes les applis installées, avec leurs vraies icônes, triées par usage |
 | **Plex** | Ce qui joue sur l'Apple TV + « Continuer à regarder » et « À suivre » du serveur Plex, lancement direct dans Plex |
 | **Maison** | Scènes, volets, lampes, lampes Govee avec scènes, mode cinéma automatique |
