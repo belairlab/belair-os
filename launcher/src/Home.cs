@@ -61,6 +61,9 @@ public sealed class QuietHome : NUIApplication
  static readonly string[] haLampId={"light.salon_lampe_entree","light.salon_lampe_musique","light.chambre_lampadaire","light.chambre_lampe_de_chevet_gauche","light.chambre_lampe_de_chevet_droite","light.bureau_lampadaire","light.couloir_couloir","switch.grillplats_plug","light.cuisine","light.salon_neon_rope_light","light.bureau_lantern_floor_lamp"};
  static readonly string[] haLampName={"Salon · Entrée","Salon · Musique","Chambre · Lampadaire","Chambre · Gauche","Chambre · Droite","Bureau","Couloir","Lampe Orange","Cuisine","Salon · Néon","Bureau · Lanterne"};
  const string cuisineGroup="light.cuisine";
+ // Dimmable lamps: OK toggles, a long press on OK opens a brightness panel.
+ static readonly HashSet<string> dimLamps=new HashSet<string>{"light.salon_lampe_entree","light.salon_lampe_musique","light.chambre_lampadaire","light.chambre_lampe_de_chevet_gauche","light.chambre_lampe_de_chevet_droite","light.bureau_lampadaire","light.couloir_couloir","light.cuisine"};
+ string pendingLamp;Tizen.NUI.Timer longPressTimer;bool keyUpSeen,swallowReturn;
  static readonly HashSet<string> goveeLamps=new HashSet<string>{"light.salon_neon_rope_light","light.bureau_lantern_floor_lamp"};
  readonly HashSet<string> colorLights=new HashSet<string>();readonly Dictionary<string,int> lightBri=new Dictionary<string,int>();
  readonly Dictionary<string,string> lightEffect=new Dictionary<string,string>();readonly Dictionary<string,string[]> lightEffects=new Dictionary<string,string[]>();
@@ -1394,7 +1397,7 @@ public sealed class QuietHome : NUIApplication
    var nml=Label(haLampName[i],58,0,lw-150,lh,22,on?ink:Tx(.36f,.4f,.46f,1),"Semibold");card.Add(nml);
    var stt=Label(on?"Allumée":"Éteinte",lw-116,0,96,lh,19,on?(dark?new Color(1f,.82f,.42f,1):new Color(.62f,.46f,.12f,1)):Tx(.5f,.53f,.58f,1),"Semibold");stt.HorizontalAlignment=HorizontalAlignment.End;card.Add(stt);
    lampCards[haLampId[i]]=card;lampDots[haLampId[i]]=dotv;lampNames[haLampId[i]]=nml;lampStates[haLampId[i]]=stt;
-   slots.Add(new Slot{Card=card,Name=haLampName[i],Action="ha_lamp:"+haLampId[i],Description="OK pour allumer ou éteindre",Row=2+rowN,X=x,Y=y,W=lw,H=lh});
+   slots.Add(new Slot{Card=card,Name=haLampName[i],Action="ha_lamp:"+haLampId[i],Description=dimLamps.Contains(haLampId[i])?"OK pour allumer ou éteindre · appui long : luminosité":"OK pour allumer ou éteindre",Row=2+rowN,X=x,Y=y,W=lw,H=lh});
   }
   BuildDevices();
   if(!coverPopupOpen&&DateTime.Now-lastHaRequest>=TimeSpan.FromSeconds(8)){lastHaRequest=DateTime.Now;RequestHaStates();}
@@ -1505,12 +1508,14 @@ public sealed class QuietHome : NUIApplication
   return SceneName(en);
  }
 
- List<int> LightRows(){var r=new List<int>{0};if(LightScenes().Length>0)r.Add(1);r.Add(3);r.Add(2);return r;}
+ void ToggleLamp(string id){bool nowOn=!IsLampOn(id);foreach(var m in GroupMembers(id)){haLampState[m]=nowOn?"on":"off";int dot=m.IndexOf('.');SendHaAction(dot>0?m.Substring(0,dot):"light",nowOn?"turn_on":"turn_off",m);}SetLampVisual(id);}
+ int NearestBriStep(string id){if(!IsLampOn(id)||!lightBri.TryGetValue(id,out var b)||b<0)return 0;int best=1;for(int i=0;i<lightBriSteps.Length;i++)if(Math.Abs(lightBriSteps[i]-b*100/255.0)<Math.Abs(lightBriSteps[best-1]-b*100/255.0))best=i+1;return best;}
+ List<int> LightRows(){if(!goveeLamps.Contains(lightId))return new List<int>{0};var r=new List<int>{0};if(LightScenes().Length>0)r.Add(1);r.Add(3);r.Add(2);return r;}
  int LightRowLength(int row){return row==0?1+lightBriSteps.Length:row==1?LightScenes().Length:row==3?moodNames.Length:lightColorNames.Length;}
  void BuildLightPopup()
  {
   Add(new View{Size2D=new Size2D(1920,1080),BackgroundColor=new Color(.05f,.07f,.12f,.6f)});
-  int pw=1560,ph=LightScenes().Length>0?790:660,px=(1920-pw)/2,py=(1080-ph)/2;
+  int pw=1560,ph=!goveeLamps.Contains(lightId)?350:LightScenes().Length>0?790:660,px=(1920-pw)/2,py=(1080-ph)/2;
   var panel=Panel(px,py,pw,ph,Sf(1,1,1,.98f),28);
   bool on=IsLampOn(lightId);int bri=lightBri.TryGetValue(lightId,out var b)?b:-1;string eff=lightEffect.TryGetValue(lightId,out var e)?e:"";
   panel.Add(Label(LampName(lightId),48,28,1000,46,34,ink,"Semibold"));
@@ -2104,7 +2109,13 @@ public sealed class QuietHome : NUIApplication
  }
  void OnKey(object sender,Window.KeyEventArgs e)
  {
-  if(e.Key==null||e.Key.State!=Key.StateType.Down)return;string k=e.Key.KeyPressedName;isPaused=false;lastInput=DateTime.Now;if(ambientRoot!=null){CloseAmbient();return;}
+  if(e.Key!=null&&e.Key.State==Key.StateType.Up){
+   string ku=e.Key.KeyPressedName;keyUpSeen=true;
+   if(ku=="Return"||ku=="KP_Enter"){swallowReturn=false;if(pendingLamp!=null){string id=pendingLamp;pendingLamp=null;longPressTimer?.Stop();ToggleLamp(id);}}
+   return;
+  }
+  if(e.Key==null||e.Key.State!=Key.StateType.Down)return;string k=e.Key.KeyPressedName;
+  if((k=="Return"||k=="KP_Enter")&&(swallowReturn||pendingLamp!=null))return; // OK still held after a long pressisPaused=false;lastInput=DateTime.Now;if(ambientRoot!=null){CloseAmbient();return;}
   long now=Environment.TickCount64;if(k==lastKey&&now-lastKeyAt<180)return;lastKey=k;lastKeyAt=now;
   if(briefRoot!=null){CloseBrief(true);return;}
   if(MaybeBrief())return;
@@ -2289,7 +2300,12 @@ public sealed class QuietHome : NUIApplication
   if(a.StartsWith("pref:")){CyclePref(a.Substring(5));return;}
   if(a.StartsWith("ha_auto:")){string id=a.Substring(8);bool on=SensorState(id)=="off";haSensor[id]=on?"on":"off";SendHaAction("automation",on?"turn_on":"turn_off",id);UpdateDevices();notice.Text=on?"Mode cinéma automatique activé":"Mode cinéma automatique coupé";return;}
   if(a.StartsWith("ha_lamp:")&&colorLights.Contains(a.Substring(8))){lightId=a.Substring(8);lightOpen=true;lightRow=0;lightCol=0;BuildPage();return;}
-  if(a.StartsWith("ha_lamp:")){string id=a.Substring(8);bool nowOn=!IsLampOn(id);foreach(var m in GroupMembers(id)){haLampState[m]=nowOn?"on":"off";int dot=m.IndexOf('.');SendHaAction(dot>0?m.Substring(0,dot):"light",nowOn?"turn_on":"turn_off",m);}SetLampVisual(id);return;}
+  if(a.StartsWith("ha_lamp:")&&dimLamps.Contains(a.Substring(8))&&keyUpSeen){
+   pendingLamp=a.Substring(8);longPressTimer?.Stop();longPressTimer=new Tizen.NUI.Timer(550);
+   longPressTimer.Tick+=(o,ev)=>{if(pendingLamp!=null){lightId=pendingLamp;pendingLamp=null;swallowReturn=true;lightOpen=true;lightRow=0;lightCol=NearestBriStep(lightId);BuildPage();}return false;};
+   longPressTimer.Start();return;
+  }
+  if(a.StartsWith("ha_lamp:")){ToggleLamp(a.Substring(8));return;}
   if(a=="picturemode"){OpenPicture();return;}
   if(a=="controllers"){Launch("org.tizen.menu","add-bluetooth-keyboard");return;}
   if(a=="network"){Launch("org.tizen.menu","networksettings");return;}
