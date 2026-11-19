@@ -107,7 +107,7 @@ public sealed class QuickLaunch : NUIApplication {
     if(wa||bt!=null)lock(actLock){
      if(wa){
       string body=ps!=null?("{\"entity_id\":\""+en+"\",\"position\":"+ps+"}"):("{\"entity_id\":\""+en+"\"}");
-      ok=HaPost("/api/services/"+d+"/"+sv,body);
+      ok=HaPost("/api/services/"+d+"/"+sv,LocalLight(d+"/"+sv,body));
      }
      if(bt!=null)ok=HaBatch(bt)&&ok;
     }
@@ -171,7 +171,7 @@ public sealed class QuickLaunch : NUIApplication {
   if(haClient!=null)return haClient;
   var h=new HttpClientHandler();
   h.ServerCertificateCustomValidationCallback=(m,c,ch,er)=>true; // owner-authorised: local HA on the LAN uses a hostname-mismatched/self-signed certificate
-  var cl=new HttpClient(h);cl.Timeout=TimeSpan.FromSeconds(6);
+  var cl=new HttpClient(h);cl.Timeout=TimeSpan.FromSeconds(15);
   cl.DefaultRequestHeaders.Authorization=new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer",haToken);
   haClient=cl;return cl;
   }
@@ -181,9 +181,17 @@ public sealed class QuickLaunch : NUIApplication {
   foreach(var b in haUrls){try{{var cl=HaClient();var resp=cl.GetAsync(b+path).GetAwaiter().GetResult();if(resp.IsSuccessStatusCode)return resp.Content.ReadAsStringAsync().GetAwaiter().GetResult();}}catch{}}
   return null;
  }
+ // Govee lights exist twice in Home Assistant: the cloud entity (scenes, but 4–7 s per command)
+ // and the LAN entity (~20 ms). Power, brightness and colours use the LAN one; only scenes go to the cloud.
+ static readonly Dictionary<string,string> lanLight=new Dictionary<string,string>{{"light.salon_neon_rope_light","light.salon_neon"},{"light.bureau_lantern_floor_lamp","light.h1630_2"}};
+ static string LocalLight(string path,string body){
+  if(!path.StartsWith("light/")||body.Contains("\"effect\""))return body;
+  foreach(var kv in lanLight)body=body.Replace("\""+kv.Key+"\"","\""+kv.Value+"\"");
+  return body;
+ }
  static bool HaPost(string path,string body){
   LoadHaConfig();
-  foreach(var b in haUrls){var sw=Stopwatch.StartNew();try{{var cl=HaClient();var ct=new StringContent(body,System.Text.Encoding.UTF8,"application/json");var resp=cl.PostAsync(b+path,ct).GetAwaiter().GetResult();Tlog("post "+path+" "+(int)resp.StatusCode+" "+sw.ElapsedMilliseconds+"ms");if(resp.IsSuccessStatusCode)return true;}}catch(Exception x){Tlog("post "+path+" fail "+sw.ElapsedMilliseconds+"ms "+x.GetType().Name);}}
+  foreach(var b in haUrls){var sw=Stopwatch.StartNew();try{{var cl=HaClient();var ct=new StringContent(body,System.Text.Encoding.UTF8,"application/json");var resp=cl.PostAsync(b+path,ct).GetAwaiter().GetResult();Tlog("post "+path+" "+(int)resp.StatusCode+" "+sw.ElapsedMilliseconds+"ms");if(resp.IsSuccessStatusCode)return true;}}catch(Exception x){Tlog("post "+path+" fail "+sw.ElapsedMilliseconds+"ms "+x.GetType().Name);if(x is TaskCanceledException)return false;}}
   return false;
  }
  static string HaPostJson(string path,string body){
@@ -209,7 +217,9 @@ public sealed class QuickLaunch : NUIApplication {
    if(!HaCallAllowed(path,body)){all=false;continue;}
    int wait=call.TryGetProperty("w",out var w)&&w.ValueKind==JsonValueKind.Number?w.GetInt32():(n>0?1500:0);n++;
    if(wait>0)System.Threading.Thread.Sleep(Math.Min(wait,15000));
-   bool ok;lock(actLock)ok=HaPost("/api/services/"+path,body.GetRawText());
+   // Lights go straight out (local ones answer in ~20 ms; a cloud scene can take 7 s and must not hold up the rest).
+   bool ok;string raw=LocalLight(path,body.GetRawText());
+   if(path.StartsWith("light/"))ok=HaPost("/api/services/"+path,raw);else lock(actLock)ok=HaPost("/api/services/"+path,raw);
    if(!ok)all=false;
   }}}catch{all=false;}
   return all;
@@ -286,7 +296,11 @@ public sealed class QuickLaunch : NUIApplication {
   string json=HaGet("/api/states");if(json==null)return null;
   var patterns=string.IsNullOrEmpty(sensors)?new string[0]:sensors.Split(',');
   var ms=new MemoryStream();
-  try{using(var w=new Utf8JsonWriter(ms)){w.WriteStartArray();using(var doc=JsonDocument.Parse(json))foreach(var s in doc.RootElement.EnumerateArray()){
+  try{using(var w=new Utf8JsonWriter(ms)){w.WriteStartArray();using(var doc=JsonDocument.Parse(json)){
+   var lan=new Dictionary<string,(string st,int bri)>();
+   foreach(var s in doc.RootElement.EnumerateArray()){string lid=Str(s,"entity_id");if(!lanLight.ContainsValue(lid))continue;string lst=Str(s,"state");if(lst!="on"&&lst!="off")continue;
+    int lb=-1;if(s.TryGetProperty("attributes",out var lat)&&lat.TryGetProperty("brightness",out var lbv)&&lbv.ValueKind==JsonValueKind.Number)lb=lbv.GetInt32();lan[lid]=(lst,lb);}
+   foreach(var s in doc.RootElement.EnumerateArray()){
    string id=s.GetProperty("entity_id").GetString();if(id==null)continue;
    if(!(id.StartsWith("cover.")||id.StartsWith("light.")||id.StartsWith("switch.")||SensorWanted(id,patterns)))continue;
    string state=s.TryGetProperty("state",out var st)?st.GetString():"";
@@ -295,12 +309,13 @@ public sealed class QuickLaunch : NUIApplication {
    // Colour lights also report brightness, current scene and the scenes they offer (for the Govee-style panel).
    if(id.StartsWith("light.")&&s.TryGetProperty("attributes",out var la)&&la.TryGetProperty("supported_color_modes",out var cm)&&cm.ValueKind==JsonValueKind.Array&&cm.EnumerateArray().Any(m=>m.GetString()!="onoff"&&m.GetString()!="brightness")){
     int bri=la.TryGetProperty("brightness",out var b)&&b.ValueKind==JsonValueKind.Number?b.GetInt32():-1;
+    if(lanLight.TryGetValue(id,out var lid2)&&lan.TryGetValue(lid2,out var lv)){state=lv.st;if(lv.bri>=0)bri=lv.bri;}
     var effects=la.TryGetProperty("effect_list",out var el)&&el.ValueKind==JsonValueKind.Array?el.EnumerateArray().Select(x=>x.GetString()??"").Where(x=>x!=""&&x!="none").ToArray():new string[0];
     w.WriteStartObject();w.WriteString("entity",id);w.WriteString("state",state);w.WriteNumber("pos",pos);w.WriteNumber("bri",bri);w.WriteString("effect",Str(la,"effect"));
     w.WriteStartArray("effects");foreach(var x in effects)w.WriteStringValue(x);w.WriteEndArray();w.WriteBoolean("color",true);w.WriteEndObject();continue;
    }
    w.WriteStartObject();w.WriteString("entity",id);w.WriteString("state",state);w.WriteNumber("pos",pos);w.WriteEndObject();
-  }w.WriteEndArray();}}catch{return null;}
+  }}w.WriteEndArray();}}catch{return null;}
   return System.Text.Encoding.UTF8.GetString(ms.ToArray());
  }
  static int ReplyHa(string data,string result){

@@ -47,7 +47,7 @@ Tout passe par **Home Assistant** (local en priorité, accès distant en secours
   ![Volets](docs/screenshots/volets.jpg)
 
 - **Lampes** allumées/éteintes en un clic, groupe cuisine compris.
-- **Lampes Govee** (néon du salon, lanterne du bureau) : un panneau façon app Govee avec luminosité, **scènes Govee** (les plus populaires en premier, puis tout le catalogue par catégorie : 362 pour le néon, 107 pour la lanterne, noms en français), ambiances prêtes à l'emploi, couleurs et blancs.
+- **Lampes Govee** (néon du salon, lanterne du bureau) : un panneau façon app Govee avec luminosité, **scènes Govee** (les plus populaires en premier, puis tout le catalogue par catégorie : 362 pour le néon, 107 pour la lanterne, noms en français), ambiances prêtes à l'emploi, couleurs et blancs. Allumage, luminosité et couleurs passent par le réseau local (instantané), seules les scènes passent par le cloud Govee.
 
   ![Panneau Govee](docs/screenshots/govee-panel.jpg)
   ![Catalogue de scènes Govee](docs/screenshots/govee-catalogue.jpg)
