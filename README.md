@@ -30,7 +30,7 @@ Il est construit sur [Quiet Tizen](docs/quiet-tizen.md) (launcher natif NUI/C#, 
 | **Maison** | Scènes, volets, lampes, lampes Govee avec scènes, mode cinéma automatique |
 | **Félix** | Robot aspirateur : carte en direct, état, entretien, nettoyage par pièce et programmes |
 | **Vélos** | Les 4 stations Vélib' les plus proches (vélos mécaniques, électriques, places) et les Lime disponibles sur un plan des rues centré sur le domicile ; les flèches parcourent le plan (autonomie de chaque Lime) |
-| **Localiser** | Protégée par un code PIN : les appareils et objets de Localiser (intégration iCloud de Home Assistant) avec lieu, distance, batterie et dernière localisation, sur un plan des rues ; OK deux fois fait sonner un appareil |
+| **Localiser** | Protégée par un code PIN : les appareils et objets de Localiser (intégration iCloud de Home Assistant) avec lieu, distance, batterie et dernière localisation, sur un plan des rues ; OK centre la carte sur un appareil, un appui long le fait sonner après confirmation |
 | **Énergie** | Consommation électrique quotidienne sur 30 jours (Linky / Octopus) |
 | **Système** | Infos TV : système, réseau, processeur, mémoire, stockage |
 | **Réglages** | Volume, luminosité et contraste, mode d'image, mode jeu, son, minuterie, réseau, thème, couleur, fond d'écran, brief du matin |

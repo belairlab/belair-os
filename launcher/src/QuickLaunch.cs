@@ -255,6 +255,7 @@ public sealed class QuickLaunch : NUIApplication {
  }
  // ---- Localiser: every tracked device with a position (iCloud, companion app), relative to home ----
  const string findTemplate="{% set ns=namespace(o=[]) %}{% for s in states.device_tracker if s.attributes.latitude is defined and s.attributes.longitude is defined %}{% set d=device_id(s.entity_id) %}{% set ents=device_entities(d) if d else [] %}{% set snd=ents|select('search','play_sound')|first|default('') %}{% set loc=ents|select('search','last_located')|first|default('') %}{% set ns.o=ns.o+[{'id':s.entity_id,'name':s.name,'lat':s.attributes.latitude,'lon':s.attributes.longitude,'bat':s.attributes.battery|default(-1),'bs':s.attributes.battery_status|default(''),'model':s.attributes.device_name|default(''),'state':s.state,'zone':(state_attr('zone.'~s.state,'friendly_name') or ''),'acc':s.attributes.gps_accuracy|default(0),'sound':snd,'located':(states(loc) if loc else s.last_updated|string)}] %}{% endfor %}{{ ns.o|tojson }}";
+ static readonly System.Collections.Concurrent.ConcurrentDictionary<string,double[]> findPos=new System.Collections.Concurrent.ConcurrentDictionary<string,double[]>();
  static string FetchFindJson(){
   LoadCenter();
   string raw=HaPostJson("/api/template",JsonSerializer.Serialize(new{template=findTemplate}));if(raw==null)return null;
@@ -262,7 +263,7 @@ public sealed class QuickLaunch : NUIApplication {
   try{using(var doc=JsonDocument.Parse(raw))using(var w=new Utf8JsonWriter(ms)){
    w.WriteStartArray();
    foreach(var d in doc.RootElement.EnumerateArray()){
-    double la=d.GetProperty("lat").GetDouble(),lo=d.GetProperty("lon").GetDouble();double dx=Dx(lo),dy=Dy(la);
+    double la=d.GetProperty("lat").GetDouble(),lo=d.GetProperty("lon").GetDouble();double dx=Dx(lo),dy=Dy(la);findPos[Str(d,"id")]=new[]{la,lo};
     w.WriteStartObject();
     foreach(var k in new[]{"id","name","bs","model","state","zone","sound","located"})w.WriteString(k,Str(d,k));
     w.WriteNumber("bat",d.TryGetProperty("bat",out var b)&&b.ValueKind==JsonValueKind.Number?b.GetInt32():-1);
@@ -283,14 +284,16 @@ public sealed class QuickLaunch : NUIApplication {
   foreach(var old in new[]{"basemap-dark_all","basemap-light_all"})try{string od=System.IO.Path.Combine(SharedDir(""),old);if(Directory.Exists(od))Directory.Delete(od,true);}catch{}
   int W=int.Parse(p[1]),H=int.Parse(p[2]),R=int.Parse(p[3]);int z=16;
   // zoom level whose tiles are shown at or below their own size (sharp): never stretched more than 10 %
-  while(z<18&&R/400.0*156543.03392*Math.Cos(ctrLat*Math.PI/180)/Math.Pow(2,z)>1.1)z++;
+  while(z<18&&R/400.0*156543.03392*Math.Cos((p.Length>4&&findPos.TryGetValue(p[4],out var zp)?zp[0]:ctrLat)*Math.PI/180)/Math.Pow(2,z)>1.1)z++;
   LoadCenter();
-  double latr=ctrLat*Math.PI/180,world=256*Math.Pow(2,z);
-  double cx=(ctrLon+180)/360*world,cy=(1-Math.Log(Math.Tan(latr)+1/Math.Cos(latr))/Math.PI)/2*world;
+  double cLat=ctrLat,cLon=ctrLon;
+  if(p.Length>4&&p[4].StartsWith("device_tracker.")){if(!findPos.ContainsKey(p[4]))FetchFindJson();if(findPos.TryGetValue(p[4],out var fp)){cLat=fp[0];cLon=fp[1];}else return null;}
+  double latr=cLat*Math.PI/180,world=256*Math.Pow(2,z);
+  double cx=(cLon+180)/360*world,cy=(1-Math.Log(Math.Tan(latr)+1/Math.Cos(latr))/Math.PI)/2*world;
   double mpp=156543.03392*Math.Cos(latr)/Math.Pow(2,z),sc=R/400.0*mpp;
   double hw=W/2.0/sc,hh=H/2.0/sc;
   int tx0=(int)Math.Floor((cx-hw)/256),tx1=(int)Math.Floor((cx+hw)/256),ty0=(int)Math.Floor((cy-hh)/256),ty1=(int)Math.Floor((cy+hh)/256);
-  if((tx1-tx0+1)*(ty1-ty0+1)>60)return null;
+  if((tx1-tx0+1)*(ty1-ty0+1)>80)return null;
   string dir=SharedDir("basemap-osm");
   var jobs=new List<Task<string[]>>();
   for(int tx=tx0;tx<=tx1;tx++)for(int ty=ty0;ty<=ty1;ty++){int x=tx,y=ty;
@@ -304,7 +307,7 @@ public sealed class QuickLaunch : NUIApplication {
    }));}
   Task.WaitAll(jobs.ToArray());
   var ms=new MemoryStream();
-  using(var w=new Utf8JsonWriter(ms)){w.WriteStartObject();w.WriteString("Key",request+(ctrLoaded?"":"|metro"));w.WriteNumber("Size",(int)Math.Ceiling(256*sc));w.WriteStartArray("Tiles");
+  using(var w=new Utf8JsonWriter(ms)){w.WriteStartObject();w.WriteString("Key",request+(ctrLoaded||p.Length>4?"":"|metro"));w.WriteNumber("Size",(int)Math.Ceiling(256*sc));w.WriteStartArray("Tiles");
    foreach(var j in jobs){var t=j.Result;if(t==null)continue;w.WriteStartArray();w.WriteStringValue(t[0]);w.WriteNumberValue(int.Parse(t[1]));w.WriteNumberValue(int.Parse(t[2]));w.WriteEndArray();}
    w.WriteEndArray();w.WriteEndObject();}
   return System.Text.Encoding.UTF8.GetString(ms.ToArray());
