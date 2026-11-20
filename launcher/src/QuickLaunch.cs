@@ -253,6 +253,29 @@ public sealed class QuickLaunch : NUIApplication {
   }
   return System.Text.Encoding.UTF8.GetString(ms.ToArray());
  }
+ // ---- Localiser: every tracked device with a position (iCloud, companion app), relative to home ----
+ const string findTemplate="{% set ns=namespace(o=[]) %}{% for s in states.device_tracker if s.attributes.latitude is defined and s.attributes.longitude is defined %}{% set d=device_id(s.entity_id) %}{% set ents=device_entities(d) if d else [] %}{% set snd=ents|select('search','play_sound')|first|default('') %}{% set loc=ents|select('search','last_located')|first|default('') %}{% set ns.o=ns.o+[{'id':s.entity_id,'name':s.name,'lat':s.attributes.latitude,'lon':s.attributes.longitude,'bat':s.attributes.battery|default(-1),'bs':s.attributes.battery_status|default(''),'model':s.attributes.device_name|default(''),'state':s.state,'zone':(state_attr('zone.'~s.state,'friendly_name') or ''),'acc':s.attributes.gps_accuracy|default(0),'sound':snd,'located':(states(loc) if loc else s.last_updated|string)}] %}{% endfor %}{{ ns.o|tojson }}";
+ static string FetchFindJson(){
+  LoadCenter();
+  string raw=HaPostJson("/api/template",JsonSerializer.Serialize(new{template=findTemplate}));if(raw==null)return null;
+  var ms=new MemoryStream();
+  try{using(var doc=JsonDocument.Parse(raw))using(var w=new Utf8JsonWriter(ms)){
+   w.WriteStartArray();
+   foreach(var d in doc.RootElement.EnumerateArray()){
+    double la=d.GetProperty("lat").GetDouble(),lo=d.GetProperty("lon").GetDouble();double dx=Dx(lo),dy=Dy(la);
+    w.WriteStartObject();
+    foreach(var k in new[]{"id","name","bs","model","state","zone","sound","located"})w.WriteString(k,Str(d,k));
+    w.WriteNumber("bat",d.TryGetProperty("bat",out var b)&&b.ValueKind==JsonValueKind.Number?b.GetInt32():-1);
+    w.WriteNumber("acc",d.TryGetProperty("acc",out var a)&&a.ValueKind==JsonValueKind.Number?(int)a.GetDouble():0);
+    // far away (another city or country): the exact offset is not needed, only the distance
+    double dist=Math.Sqrt(dx*dx+dy*dy);
+    w.WriteNumber("dist",(long)Math.Round(dist));w.WriteNumber("dx",dist<20000?(int)Math.Round(dx):0);w.WriteNumber("dy",dist<20000?(int)Math.Round(dy):0);
+    w.WriteEndObject();
+   }
+   w.WriteEndArray();
+  }}catch{return null;}
+  return System.Text.Encoding.UTF8.GetString(ms.ToArray());
+ }
  // ---- street map behind the Vélos plan: OpenStreetMap tiles, fetched once and kept (about 25 tiles) ----
  // request "dark|width|height|radius": the plan is width×height display pixels, 400 m = radius pixels, centred on Bel-Air.
  static string FetchBasemapJson(string request){
@@ -323,19 +346,21 @@ public sealed class QuickLaunch : NUIApplication {
   bool wantMedia=e.ReceivedAppControl.ExtraData.TryGet("quiet_media_request",out mediaRequest)&&!string.IsNullOrEmpty(mediaRequest);
   bool wantFelix=e.ReceivedAppControl.ExtraData.TryGet("quiet_felix_request",out felixRequest)&&(felixRequest=="1"||felixRequest=="2");
   string mobRequest;bool wantMob=e.ReceivedAppControl.ExtraData.TryGet("quiet_mobility_request",out mobRequest)&&mobRequest=="1";
+  string findRequest;bool wantFind=e.ReceivedAppControl.ExtraData.TryGet("quiet_find_request",out findRequest)&&findRequest=="1";
   string mapRequest;bool wantMap=e.ReceivedAppControl.ExtraData.TryGet("quiet_basemap_request",out mapRequest)&&!string.IsNullOrEmpty(mapRequest);
-  if(wantMedia||wantFelix||wantSeries||wantFacts||wantMob||wantMap){
-   haLast=DateTime.UtcNow;System.Threading.Interlocked.Increment(ref haBusy);bool hubs=mediaRequest=="all",wm=wantMedia,wf=wantFelix,live=felixRequest=="2";string sr=wantSeries?seriesRequest:null;bool wfa=wantFacts,wmo=wantMob;string mq=wantMap?mapRequest:null;
+  if(wantMedia||wantFelix||wantSeries||wantFacts||wantMob||wantMap||wantFind){
+   haLast=DateTime.UtcNow;System.Threading.Interlocked.Increment(ref haBusy);bool hubs=mediaRequest=="all",wm=wantMedia,wf=wantFelix,live=felixRequest=="2";string sr=wantSeries?seriesRequest:null;bool wfa=wantFacts,wmo=wantMob,wfi=wantFind;string mq=wantMap?mapRequest:null;
    Task.Run(()=>{try{
     var mobTask=wmo?Task.Run(FetchMobilityJson):Task.FromResult<string>(null);
     var rainTask=wmo?Task.Run(FetchRainJson):Task.FromResult<string>(null);
+    var findTask=wfi?Task.Run(FetchFindJson):Task.FromResult<string>(null);
     var mapTask=mq!=null?Task.Run(()=>FetchBasemapJson(mq)):Task.FromResult<string>(null);
     var mediaTask=wm?Task.Run(()=>FetchMediaJson(hubs)):Task.FromResult<string>(null);
     var felixTask=wf?Task.Run(()=>FetchFelixJson(live)):Task.FromResult<string>(null);
     var seriesTask=sr!=null?Task.Run(()=>FetchSeriesJson(sr)):Task.FromResult<string>(null);
     var factsTask=wfa?Task.Run(FetchFactsJson):Task.FromResult<string>(null);
-    Task.WaitAll(mediaTask,felixTask,seriesTask,factsTask,mobTask,rainTask,mapTask);
-    ReplyExtra(mediaTask.Result,felixTask.Result,seriesTask.Result,factsTask.Result,mobTask.Result,rainTask.Result,mapTask.Result);
+    Task.WaitAll(mediaTask,felixTask,seriesTask,factsTask,mobTask,rainTask,mapTask,findTask);
+    ReplyExtra(mediaTask.Result,felixTask.Result,seriesTask.Result,factsTask.Result,mobTask.Result,rainTask.Result,mapTask.Result,findTask.Result);
    }catch{}finally{haLast=DateTime.UtcNow;System.Threading.Interlocked.Decrement(ref haBusy);}});
    KeepWarm();return;
   }
@@ -478,6 +503,7 @@ public sealed class QuickLaunch : NUIApplication {
   if(path=="media_player/play_media"||path=="media_player/turn_on"||path=="media_player/select_source")return entity=="media_player.appletv_appletv";
   if(path=="remote/send_command")return entity=="remote.appletv_appletv";
   if(path=="light/turn_on"||path=="light/turn_off")return entity.StartsWith("light.");
+  if(path=="button/press")return entity.StartsWith("button.")&&entity.EndsWith("_play_sound");
   return false;
  }
  static bool HaCalls(string json){
@@ -1180,8 +1206,8 @@ public sealed class QuickLaunch : NUIApplication {
   PruneDir(SharedDir("felix"),new HashSet<string>{System.IO.Path.GetFileName(map)},2);
   return JsonSerializer.Serialize(new{Map=map,Stamp=stamp,States=states,Buttons=buttons,Rooms=FelixRooms()});
  }
- static int ReplyExtra(string media,string felix,string series=null,string facts=null,string mobility=null,string rain=null,string basemap=null){
-  if(media==null&&felix==null&&series==null&&facts==null&&mobility==null&&rain==null&&basemap==null)return 0;
+ static int ReplyExtra(string media,string felix,string series=null,string facts=null,string mobility=null,string rain=null,string basemap=null,string find=null){
+  if(media==null&&felix==null&&series==null&&facts==null&&mobility==null&&rain==null&&basemap==null&&find==null)return 0;
   IntPtr c;int r=app_control_create(out c);if(r!=0)return r;
   try{
    r=app_control_set_app_id(c,"com.samsung.tv.bixby-promotion");
@@ -1194,6 +1220,7 @@ public sealed class QuickLaunch : NUIApplication {
    if(r==0&&mobility!=null)r=app_control_add_extra_data(c,"quiet_mobility",mobility);
    if(r==0&&rain!=null)r=app_control_add_extra_data(c,"quiet_rain",rain);
    if(r==0&&basemap!=null)r=app_control_add_extra_data(c,"quiet_basemap",basemap);
+   if(r==0&&find!=null)r=app_control_add_extra_data(c,"quiet_find",find);
    if(r==0)r=app_control_send_launch_request(c,IntPtr.Zero,IntPtr.Zero);
    return r;
   }finally{app_control_destroy(c);}
