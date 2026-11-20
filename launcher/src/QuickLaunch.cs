@@ -13,6 +13,7 @@ using System.Xml;
 using System.Xml.Linq;
 using System.Linq;
 using Tizen.NUI;
+using Tizen.NUI.BaseComponents;
 using Tizen.Applications;
 // The vendor boot unit expects this application to accept its preload request.
 // Acknowledge it and exit; interactive requests open the existing Quiet Home process.
@@ -33,6 +34,254 @@ public sealed class QuickLaunch : NUIApplication {
  [DllImport("libcapi-appfw-app-control.so.0")] static extern int app_control_add_extra_data(IntPtr c,string key,string val);
  [DllImport("libcapi-appfw-app-control.so.0")] static extern int app_control_send_launch_request(IntPtr c,IntPtr cb,IntPtr data);
  [DllImport("libcapi-appfw-app-control.so.0")] static extern int app_control_destroy(IntPtr c);
+ [DllImport("libnotification.so.0")] static extern int notification_status_message_post(string m);
+ [DllImport("libnotification.so.0")] static extern IntPtr notification_create(int type);
+ [DllImport("libnotification.so.0")] static extern int notification_set_text(IntPtr n,int type,string text,string key,int argsType);
+ [DllImport("libnotification.so.0")] static extern int notification_set_display_applist(IntPtr n,int list);
+ [DllImport("libnotification.so.0")] static extern int notification_post(IntPtr n);
+ [DllImport("libnotification.so.0")] static extern int notification_free(IntPtr n);
+ // Banners: a small notification-level window over any input (Apple TV on HDMI included). It stays until OK or Back:
+ // only those two keys are grabbed (topmost) while it is shown, every other key keeps going to the Apple TV.
+ Window banner;readonly Queue<string[]> bannerQueue=new Queue<string[]>();bool bannerHeld;Tizen.NUI.Timer bannerTimer;
+ const int keyReturn=36,keyBack=166;
+ void ShowBanner(string title,string body,string colour="#669EFF"){
+  ShowBanner(title,body,colour,"info");
+ }
+ void ShowBanner(string title,string body,string colour,string icon,string timeout="0"){
+  bannerQueue.Enqueue(new[]{title,body,colour,icon,timeout});
+  if(banner==null)NextBanner();
+ }
+ void NextBanner(){
+  if(bannerQueue.Count==0)return;
+  var b=bannerQueue.Dequeue();
+  try{
+   int w=820,h=176;string pic=b.Length>3?BannerPicture(b[3]):"";bool photo=pic!=""&&!pic.EndsWith(".svg");
+   banner=new Window("BelAirBanner",new Rectangle(1920-w-48,48,w,h),true);
+   banner.Type=WindowType.Notification;
+   banner.SetNotificationLevel(NotificationLevel.High);
+   banner.SetAcceptFocus(false);
+   banner.BackgroundColor=new Color(0,0,0,0);
+   var panel=new View{Size2D=new Size2D(w,h),BackgroundColor=new Color(.08f,.10f,.16f,.95f),CornerRadius=new Vector4(28,28,28,28),BorderlineWidth=2,BorderlineColor=new Color(1,1,1,.12f)};
+   int pw=photo?172:112,tx=24+pw+22;
+   var tile=new View{Position2D=new Position2D(24,(h-112)/2),Size2D=new Size2D(pw,112),CornerRadius=new Vector4(22,22,22,22),BackgroundColor=photo?new Color(0,0,0,.3f):new Color(b[2])};panel.Add(tile);
+   if(pic!="")tile.Add(new ImageView{ResourceUrl=pic,Position2D=new Position2D(photo?0:18,photo?0:18),Size2D=new Size2D(photo?pw:76,photo?112:76),FittingMode=photo?FittingModeType.ScaleToFill:FittingModeType.ShrinkToFit,CornerRadius=photo?new Vector4(22,22,22,22):new Vector4(0,0,0,0)});
+   panel.Add(new TextLabel{Text=b[0],Position2D=new Position2D(tx,16),Size2D=new Size2D(w-tx-28,48),PixelSize=30,TextColor=Color.White,VerticalAlignment=VerticalAlignment.Center});
+   panel.Add(new TextLabel{Text=b[1],Position2D=new Position2D(tx,64),Size2D=new Size2D(w-tx-28,70),PixelSize=23,TextColor=new Color(1,1,1,.80f),MultiLine=true,VerticalAlignment=VerticalAlignment.Top});
+   var hint=new TextLabel{Text=b.Length>4&&b[4]!="0"&&b[4]!=""?"":"OK pour fermer",Position2D=new Position2D(tx,h-40),Size2D=new Size2D(w-tx-28,28),PixelSize=18,TextColor=new Color(1,1,1,.5f),HorizontalAlignment=HorizontalAlignment.End};panel.Add(hint);
+   banner.Add(panel);
+   banner.KeyEvent+=(o,e)=>{if(e.Key.State!=Key.StateType.Down)return;string k=e.Key.KeyPressedName;if(k=="Return"||k=="KP_Enter"||k=="XF86Back"||k=="Back"||k=="Escape")CloseBanner();};
+   bool g1=banner.GrabKeyTopmost(keyReturn),g2=banner.GrabKeyTopmost(keyBack);
+   banner.Show();
+   double secs;if(b.Length>4&&double.TryParse(b[4],NumberStyles.Float,CultureInfo.InvariantCulture,out secs)&&secs>=1){bannerTimer=new Tizen.NUI.Timer((uint)(Math.Min(secs,3600)*1000));bannerTimer.Tick+=(o,e)=>{CloseBanner();return false;};bannerTimer.Start();}
+   if(!bannerHeld){bannerHeld=true;System.Threading.Interlocked.Increment(ref haBusy);}KeepWarm();
+   Tlog("banner shown grab="+g1+","+g2+" "+b[0]);
+  }catch(Exception x){Tlog("banner fail "+x.GetType().Name+" "+x.Message);banner=null;}
+ }
+ void CloseBanner(){
+  bannerTimer?.Stop();bannerTimer=null;
+  try{if(banner!=null){banner.UngrabKeyTopmost(keyReturn);banner.UngrabKeyTopmost(keyBack);banner.Hide();banner.Dispose();banner=null;}}catch{banner=null;}
+  Tlog("banner closed");
+  if(bannerQueue.Count>0){NextBanner();return;}
+  if(bannerHeld){bannerHeld=false;haLast=DateTime.UtcNow;System.Threading.Interlocked.Decrement(ref haBusy);}
+ }
+// Icons drawn for the banners (white on the coloured tile), written once to the helper's own data folder.
+ static readonly Dictionary<string,string> bannerIcons=new Dictionary<string,string>{
+  {"info","<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><circle cx='32' cy='32' r='26' fill='none' stroke='#fff' stroke-width='5'/><rect x='29' y='27' width='6' height='20' rx='3' fill='#fff'/><circle cx='32' cy='19' r='4' fill='#fff'/></svg>"},
+  {"pluie","<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><path d='M18 38a11 11 0 0 1 1-22 15 15 0 0 1 28 3 9.5 9.5 0 0 1-1 19z' fill='#fff'/><g stroke='#fff' stroke-width='4' stroke-linecap='round'><path d='M22 45l-3 8'/><path d='M33 45l-3 8'/><path d='M44 45l-3 8'/></g></svg>"},
+  {"felix","<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><circle cx='32' cy='32' r='26' fill='none' stroke='#fff' stroke-width='5'/><circle cx='32' cy='22' r='7' fill='#fff'/><path d='M14 38h36' stroke='#fff' stroke-width='4' stroke-linecap='round'/></svg>"},
+  {"plex","<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><path d='M22 10h14l16 22-16 22H22l16-22z' fill='#fff'/></svg>"},
+  {"maison","<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><path d='M10 30L32 11l22 19' fill='none' stroke='#fff' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/><path d='M17 27v25h30V27' fill='none' stroke='#fff' stroke-width='5' stroke-linejoin='round'/><rect x='27' y='37' width='10' height='15' fill='#fff'/></svg>"},
+  {"velo","<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><g fill='none' stroke='#fff' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'><circle cx='16' cy='42' r='10'/><circle cx='48' cy='42' r='10'/><path d='M16 42l10-18h16l6 18M26 24l8 18h-18M38 16h8'/></g></svg>"},
+  {"alerte","<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><path d='M32 8l26 46H6z' fill='none' stroke='#fff' stroke-width='5' stroke-linejoin='round'/><rect x='29' y='24' width='6' height='16' rx='3' fill='#fff'/><circle cx='32' cy='47' r='3.5' fill='#fff'/></svg>"},
+ };
+ static readonly Dictionary<string,string> iconTint=new Dictionary<string,string>{{"info","#5B7CFA"},{"pluie","#2F80ED"},{"felix","#27AE60"},{"plex","#E5A00D"},{"maison","#8E5CF7"},{"velo","#16A085"},{"alerte","#E74C3C"}};
+ // "icon name" → drawn icon; "camera.x" / "image.x" / any entity with a picture → that picture through Home Assistant.
+ static string BannerPicture(string what){
+  try{
+   if(string.IsNullOrEmpty(what))return "";
+   if(bannerIcons.TryGetValue(what,out var svg)){string f=System.IO.Path.Combine(SharedDir("icons"),what+".svg");if(!File.Exists(f))File.WriteAllText(f,svg);return f;}
+   if(what.StartsWith("/")&&File.Exists(what))return what;
+   if(Regex.IsMatch(what,@"^[a-z_]+\.[a-z0-9_]+$")){
+    string json=HaGet("/api/states/"+what);if(json==null)return "";
+    using(var doc=JsonDocument.Parse(json)){string picture=Str(doc.RootElement.GetProperty("attributes"),"entity_picture");if(picture.StartsWith("/api/"))return HaImage(picture,"banner",Hash(picture+DateTime.UtcNow.Ticks));}
+   }
+  }catch{}
+  return "";
+ }
+ static string Tint(string icon){return iconTint.TryGetValue(icon??"",out var c)?c:"#5B7CFA";}
+
+ // ---- alerts as banners, over Home, apps or the Apple TV ----
+ // Home Assistant pushes them over one long-lived WebSocket: the "belair_notify" event (script « BelAir OS · Message à la TV »)
+ // and Félix's state changes arrive at once; rain is checked every 15 minutes.
+ Tizen.NUI.Timer watchTimer,pumpTimer;bool watchHeld;static bool pushStarted;
+ static readonly System.Collections.Concurrent.ConcurrentQueue<string[]> pendingAlerts=new System.Collections.Concurrent.ConcurrentQueue<string[]>();
+ static int checking;static bool rainAlerted;static DateTime lastRainCheck=DateTime.MinValue;
+ void StartWatch(){
+  if(watchTimer!=null)return;
+  if(!watchHeld){watchHeld=true;System.Threading.Interlocked.Increment(ref haBusy);}KeepWarm();
+  watchTimer=new Tizen.NUI.Timer(300000);watchTimer.Tick+=(o,e)=>{RunCheck();return true;};watchTimer.Start();
+  pumpTimer=new Tizen.NUI.Timer(500);pumpTimer.Tick+=(o,e)=>{while(pendingAlerts.TryDequeue(out var a))ShowBanner(a[0],a[1],Tint(a[2]),a[2],a.Length>3?a[3]:"0");return true;};pumpTimer.Start();
+  RunCheck();StartPush();Tlog("watch on");
+ }
+ void StopWatch(){
+  watchTimer?.Stop();watchTimer=null;pumpTimer?.Stop();pumpTimer=null;
+  if(watchHeld){watchHeld=false;haLast=DateTime.UtcNow;System.Threading.Interlocked.Decrement(ref haBusy);}
+  Tlog("watch off");
+ }
+ static void StartPush(){
+  if(pushStarted)return;pushStarted=true;
+  var th=new System.Threading.Thread(()=>{
+   while(true){
+    try{
+     WithHaSocket<string>((ws,ct)=>{
+      WsSend(ws,"{\"id\":1,\"type\":\"subscribe_events\",\"event_type\":\"belair_notify\"}",ct);
+      WsSend(ws,"{\"id\":2,\"type\":\"subscribe_trigger\",\"trigger\":{\"platform\":\"state\",\"entity_id\":\"vacuum.felix\"}}",ct);
+      Tlog("push connected");
+      while(ws.State==System.Net.WebSockets.WebSocketState.Open){
+       string msg=WsRecv(ws,ct);if(msg==null)break;
+       try{using(var doc=JsonDocument.Parse(msg)){
+        var r=doc.RootElement;if(Str(r,"type")!="event")continue;var ev=r.GetProperty("event");
+        if(r.GetProperty("id").GetInt32()==1){var d=ev.GetProperty("data");string img=Str(d,"image");string to=d.TryGetProperty("timeout",out var tv)?tv.ToString():"0";
+         Alert(Str(d,"title")!=""?Str(d,"title"):"Maison",Str(d,"message"),img!=""?img:"maison",to);}
+        else{var trig=ev.GetProperty("variables").GetProperty("trigger");string from=Str(trig.GetProperty("from_state"),"state"),now=Str(trig.GetProperty("to_state"),"state");
+         if(from=="cleaning"&&(now=="returning"||now=="docked"))Alert("Félix a terminé","Le ménage est fini, il rentre à sa base.","image.felix_map_0");
+         else if(now=="error"&&from!="error")Alert("Félix a besoin d’aide","Il est bloqué ou en erreur. Voir la page Félix ou l’appli Roborock.","alerte");}
+       }}catch{}
+      }
+      return null;
+     },86400);
+    }catch{}
+    Tlog("push reconnect");System.Threading.Thread.Sleep(15000);
+   }
+  }){IsBackground=true};
+  th.Start();
+ }
+ static void RunCheck(){
+  if(System.Threading.Interlocked.Exchange(ref checking,1)==1)return;
+  Task.Run(()=>{try{CheckRain();}catch{}finally{System.Threading.Interlocked.Exchange(ref checking,0);}});
+ }
+ static void Alert(string title,string body,string icon,string timeout="0"){pendingAlerts.Enqueue(new[]{title,body,icon,timeout});Tlog("alert "+title);}
+ // Rain within the hour (Open-Meteo, 15-minute steps), once per shower.
+ static void CheckRain(){
+  if((DateTime.UtcNow-lastRainCheck).TotalMinutes<15)return;
+  lastRainCheck=DateTime.UtcNow;var rain=FetchRain();
+  if(rain==null||rain.Count<5)return;
+  if(rain.All(r=>r.Item2<0.1)){rainAlerted=false;return;}
+  if(!rainAlerted&&rain[0].Item2<0.1){int i=rain.FindIndex(r=>r.Item2>=0.2);if(i>0&&i<=4){rainAlerted=true;double total=rain.Skip(i).Take(4).Sum(r=>r.Item2);
+   Alert("Pluie vers "+rain[i].Item1,"Environ "+total.ToString("0.0",CultureInfo.GetCultureInfo("fr-FR"))+" mm attendus dans l’heure à Paris 12e. Pensez au parapluie.","pluie");}}
+ }
+ // ---- rain in the next two hours, 15-minute steps (same place as the forecast) ----
+ static HttpClient webClient;
+ static string WebGet(string url){
+  if(webClient==null){var c=new HttpClient{Timeout=TimeSpan.FromSeconds(12)};c.DefaultRequestHeaders.Add("User-Agent","BelAirOS-TV/1.0");webClient=c;}
+  try{return webClient.GetStringAsync(url).GetAwaiter().GetResult();}catch{return null;}
+ }
+ static List<Tuple<string,double>> FetchRain(){
+  string json=WebGet("https://api.open-meteo.com/v1/forecast?latitude=48.8566&longitude=2.3522&minutely_15=precipitation&forecast_minutely_15=9&timezone=Europe%2FParis");
+  if(json==null)return null;
+  try{using(var doc=JsonDocument.Parse(json)){
+   var m=doc.RootElement.GetProperty("minutely_15");var times=m.GetProperty("time");var mm=m.GetProperty("precipitation");
+   var list=new List<Tuple<string,double>>();
+   // the first step is the current quarter of an hour
+   for(int i=0;i<times.GetArrayLength();i++){string t=times[i].GetString()??"";list.Add(Tuple.Create(t.Length>=16?t.Substring(11,5):t,mm[i].ValueKind==JsonValueKind.Number?mm[i].GetDouble():0));}
+   return list;
+  }}catch{return null;}
+ }
+ static string FetchRainJson(){
+  var rain=FetchRain();if(rain==null)return null;
+  return JsonSerializer.Serialize(rain.Select(r=>new object[]{r.Item1,Math.Round(r.Item2,2)}).ToList());
+ }
+ // ---- Vélib' stations and Lime bikes around Bel-Air (public GBFS feeds, no account) ----
+ const double belAirLat=48.8566,belAirLon=2.3522;
+ static List<string[]> velibNear;static DateTime velibInfoAt=DateTime.MinValue;
+ // The plan is centred on home: Home Assistant's zone.home (never stored in the code); Bel-Air metro until it is read.
+ static double ctrLat=belAirLat,ctrLon=belAirLon;static bool ctrLoaded;
+ static void LoadCenter(){
+  if(ctrLoaded)return;
+  try{string json=HaGet("/api/states/zone.home");if(json==null)return;using(var doc=JsonDocument.Parse(json)){var a=doc.RootElement.GetProperty("attributes");
+   if(a.TryGetProperty("latitude",out var la)&&la.ValueKind==JsonValueKind.Number&&a.TryGetProperty("longitude",out var lo)&&lo.ValueKind==JsonValueKind.Number){ctrLat=la.GetDouble();ctrLon=lo.GetDouble();ctrLoaded=true;velibNear=null;}}}catch{}
+ }
+ static double Dx(double lon){return (lon-ctrLon)*111320*Math.Cos(ctrLat*Math.PI/180);}
+ static double Dy(double lat){return (lat-ctrLat)*111320;}
+ static double Meters(double lat,double lon){double dx=Dx(lon),dy=Dy(lat);return Math.Sqrt(dx*dx+dy*dy);}
+ static string FetchMobilityJson(){
+  LoadCenter();
+  const string velib="https://velib-metropole-opendata.smovengo.cloud/opendata/Velib_Metropole/";
+  if(velibNear==null||(DateTime.UtcNow-velibInfoAt).TotalHours>=24){
+   string info=WebGet(velib+"station_information.json");
+   if(info!=null)try{using(var doc=JsonDocument.Parse(info)){
+    var list=new List<Tuple<double,string,string>>();
+    foreach(var st in doc.RootElement.GetProperty("data").GetProperty("stations").EnumerateArray()){double la=st.GetProperty("lat").GetDouble(),lo=st.GetProperty("lon").GetDouble(),d=Meters(la,lo);if(d<700)list.Add(Tuple.Create(d,st.GetProperty("station_id").ToString(),Str(st,"name")+"|"+(int)Math.Round(Dx(lo))+"|"+(int)Math.Round(Dy(la))));}
+    velibNear=list.OrderBy(x=>x.Item1).Take(4).Select(x=>{var q=x.Item3.Split('|');return new[]{x.Item2,q[0],((int)x.Item1).ToString(),q[1],q[2]};}).ToList();velibInfoAt=DateTime.UtcNow;
+   }}catch{}
+  }
+  var ms=new MemoryStream();
+  using(var w=new Utf8JsonWriter(ms)){
+   w.WriteStartObject();w.WriteStartArray("Velib");
+   string status=velibNear!=null&&velibNear.Count>0?WebGet(velib+"station_status.json"):null;
+   if(status!=null)try{using(var doc=JsonDocument.Parse(status)){
+    var byId=new Dictionary<string,JsonElement>();foreach(var st in doc.RootElement.GetProperty("data").GetProperty("stations").EnumerateArray())byId[st.GetProperty("station_id").ToString()]=st.Clone();
+    foreach(var n in velibNear){if(!byId.TryGetValue(n[0],out var st))continue;int mech=0,ebike=0;
+     if(st.TryGetProperty("num_bikes_available_types",out var types))foreach(var t in types.EnumerateArray()){if(t.TryGetProperty("mechanical",out var m)&&m.ValueKind==JsonValueKind.Number)mech+=m.GetInt32();if(t.TryGetProperty("ebike",out var eb)&&eb.ValueKind==JsonValueKind.Number)ebike+=eb.GetInt32();}
+     bool open=!st.TryGetProperty("is_renting",out var rent)||rent.ValueKind!=JsonValueKind.Number||rent.GetInt32()==1;
+     w.WriteStartObject();w.WriteString("Name",n[1]);w.WriteNumber("Dist",int.Parse(n[2]));w.WriteNumber("Mech",mech);w.WriteNumber("Ebike",ebike);w.WriteNumber("Docks",st.TryGetProperty("num_docks_available",out var dk)&&dk.ValueKind==JsonValueKind.Number?dk.GetInt32():0);w.WriteBoolean("Open",open);w.WriteNumber("Dx",int.Parse(n[3]));w.WriteNumber("Dy",int.Parse(n[4]));w.WriteEndObject();}
+   }}catch{}
+   w.WriteEndArray();
+   string lime=WebGet("https://data.lime.bike/api/partners/v2/gbfs/paris/free_bike_status");
+   int count=0;double nearest=-1;var pts=new List<int[]>();
+   if(lime!=null)try{using(var doc=JsonDocument.Parse(lime))foreach(var b in doc.RootElement.GetProperty("data").GetProperty("bikes").EnumerateArray()){
+    if(b.TryGetProperty("is_disabled",out var dis)&&dis.ValueKind==JsonValueKind.True||b.TryGetProperty("is_reserved",out var res)&&res.ValueKind==JsonValueKind.True)continue;
+    double la=b.GetProperty("lat").GetDouble(),lo=b.GetProperty("lon").GetDouble(),d=Meters(la,lo);if(d<=400){count++;if(nearest<0||d<nearest)nearest=d;if(pts.Count<120){string vt=Str(b,"vehicle_type");int range=b.TryGetProperty("current_range_meters",out var cr)&&cr.ValueKind==JsonValueKind.Number?(int)cr.GetDouble():-1;pts.Add(new[]{(int)Math.Round(Dx(lo)),(int)Math.Round(Dy(la)),range,vt=="e-bike"?0:vt=="scooter"?1:2});}}
+   }}catch{count=-1;}
+   w.WriteStartObject("Lime");w.WriteNumber("Count",lime==null?-1:count);w.WriteNumber("Near",(int)Math.Round(nearest));w.WriteStartArray("Pts");foreach(var q in pts){w.WriteStartArray();foreach(var v in q)w.WriteNumberValue(v);w.WriteEndArray();}w.WriteEndArray();w.WriteEndObject();
+   w.WriteString("At",DateTime.Now.ToString("HH:mm"));w.WriteNumber("MetroDx",(int)Math.Round(Dx(belAirLon)));w.WriteNumber("MetroDy",(int)Math.Round(Dy(belAirLat)));w.WriteBoolean("Home",ctrLoaded);
+   w.WriteEndObject();
+  }
+  return System.Text.Encoding.UTF8.GetString(ms.ToArray());
+ }
+ // ---- street map behind the Vélos plan: OpenStreetMap tiles, fetched once and kept (about 25 tiles) ----
+ // request "dark|width|height|radius": the plan is width×height display pixels, 400 m = radius pixels, centred on Bel-Air.
+ static string FetchBasemapJson(string request){
+  var p=request.Split('|');if(p.Length<4)return null;
+  foreach(var old in new[]{"basemap-dark_all","basemap-light_all"})try{string od=System.IO.Path.Combine(SharedDir(""),old);if(Directory.Exists(od))Directory.Delete(od,true);}catch{}
+  int W=int.Parse(p[1]),H=int.Parse(p[2]),R=int.Parse(p[3]);int z=16;
+  // zoom level whose tiles are shown at or below their own size (sharp): never stretched more than 10 %
+  while(z<18&&R/400.0*156543.03392*Math.Cos(ctrLat*Math.PI/180)/Math.Pow(2,z)>1.1)z++;
+  LoadCenter();
+  double latr=ctrLat*Math.PI/180,world=256*Math.Pow(2,z);
+  double cx=(ctrLon+180)/360*world,cy=(1-Math.Log(Math.Tan(latr)+1/Math.Cos(latr))/Math.PI)/2*world;
+  double mpp=156543.03392*Math.Cos(latr)/Math.Pow(2,z),sc=R/400.0*mpp;
+  double hw=W/2.0/sc,hh=H/2.0/sc;
+  int tx0=(int)Math.Floor((cx-hw)/256),tx1=(int)Math.Floor((cx+hw)/256),ty0=(int)Math.Floor((cy-hh)/256),ty1=(int)Math.Floor((cy+hh)/256);
+  if((tx1-tx0+1)*(ty1-ty0+1)>60)return null;
+  string dir=SharedDir("basemap-osm");
+  var jobs=new List<Task<string[]>>();
+  for(int tx=tx0;tx<=tx1;tx++)for(int ty=ty0;ty<=ty1;ty++){int x=tx,y=ty;
+   jobs.Add(Task.Run(()=>{
+    string f=System.IO.Path.Combine(dir,z+"_"+x+"_"+y+".png");
+    if(!File.Exists(f)){
+     if(webClient==null)WebGet("about:blank");
+     try{var bytes=webClient.GetByteArrayAsync("https://tile.openstreetmap.org/"+z+"/"+x+"/"+y+".png").GetAwaiter().GetResult();if(bytes.Length>100&&bytes[0]==0x89){File.WriteAllBytes(f+".part",bytes);File.Move(f+".part",f,true);}}catch{}
+    }
+    return File.Exists(f)?new[]{f,((int)Math.Round((x*256-cx)*sc)).ToString(),((int)Math.Round((y*256-cy)*sc)).ToString()}:null;
+   }));}
+  Task.WaitAll(jobs.ToArray());
+  var ms=new MemoryStream();
+  using(var w=new Utf8JsonWriter(ms)){w.WriteStartObject();w.WriteString("Key",request+(ctrLoaded?"":"|metro"));w.WriteNumber("Size",(int)Math.Ceiling(256*sc));w.WriteStartArray("Tiles");
+   foreach(var j in jobs){var t=j.Result;if(t==null)continue;w.WriteStartArray();w.WriteStringValue(t[0]);w.WriteNumberValue(int.Parse(t[1]));w.WriteNumberValue(int.Parse(t[2]));w.WriteEndArray();}
+   w.WriteEndArray();w.WriteEndObject();}
+  return System.Text.Encoding.UTF8.GetString(ms.ToArray());
+ }
+ static void ToastProbe(string text,string mode){
+  try{
+   if(mode=="status"){Tlog("toast status rc="+notification_status_message_post(text));return;}
+   IntPtr n=notification_create(0);if(n==IntPtr.Zero){Tlog("toast create null");return;}
+   int a=notification_set_text(n,0,"BelAir OS",null,-1),b=notification_set_text(n,1,text,null,-1);
+   int c=notification_set_display_applist(n,mode=="active"?0x1f:0x0f);
+   int r=notification_post(n);notification_free(n);
+   Tlog("toast "+mode+" set="+a+","+b+","+c+" post="+r);
+  }catch(Exception x){Tlog("toast fail "+x.GetType().Name+" "+x.Message);}
+ }
  protected override void OnCreate(){base.OnCreate();Window.Default.Hide();try{sharedRoot=DirectoryInfo.SharedTrusted;}catch{}
   // Open the Home Assistant connection now: the first TLS handshake and JIT otherwise land on the first button press.
   Task.Run(()=>{try{var sw=Stopwatch.StartNew();HaStatesJson("");Tlog("warmup "+sw.ElapsedMilliseconds+"ms");}catch{}});}
@@ -40,6 +289,8 @@ public sealed class QuickLaunch : NUIApplication {
  static void Tlog(string m){try{var f="/tmp/quiet-ha-timing.txt";if(File.Exists(f)&&new FileInfo(f).Length>40000)File.Delete(f);File.AppendAllText(f,DateTime.Now.ToString("HH:mm:ss.fff")+" "+m+"\n");}catch{}}
  protected override void OnAppControlReceived(AppControlReceivedEventArgs e){
   base.OnAppControlReceived(e);Tlog("recv up="+(int)(DateTime.Now-procStart).TotalMilliseconds+"ms");string kind;bool preload=e.ReceivedAppControl.ExtraData.TryGet("launch_type",out kind)&&kind=="preload";
+  string toast;if(e.ReceivedAppControl.ExtraData.TryGet("quiet_toast",out toast)&&!string.IsNullOrEmpty(toast)){string mode;if(!e.ReceivedAppControl.ExtraData.TryGet("quiet_toast_mode",out mode))mode="active";if(mode=="window"){string tt;if(!e.ReceivedAppControl.ExtraData.TryGet("quiet_toast_title",out tt))tt="BelAir OS";ShowBanner(tt,toast);return;}ToastProbe(toast,mode);if(idleTimer==null)Exit();return;}
+  string watch;if(e.ReceivedAppControl.ExtraData.TryGet("quiet_watch",out watch)){if(watch=="1")StartWatch();else StopWatch();if(idleTimer==null&&!watchHeld)Exit();return;}
   string articleUrl;
   if(e.ReceivedAppControl.ExtraData.TryGet("quiet_article_request",out articleUrl)&&!string.IsNullOrEmpty(articleUrl)){
    haLast=DateTime.UtcNow;System.Threading.Interlocked.Increment(ref haBusy);string au=articleUrl;
@@ -57,15 +308,20 @@ public sealed class QuickLaunch : NUIApplication {
   string factsRequest;bool wantFacts=e.ReceivedAppControl.ExtraData.TryGet("quiet_facts_request",out factsRequest)&&factsRequest=="1";
   bool wantMedia=e.ReceivedAppControl.ExtraData.TryGet("quiet_media_request",out mediaRequest)&&!string.IsNullOrEmpty(mediaRequest);
   bool wantFelix=e.ReceivedAppControl.ExtraData.TryGet("quiet_felix_request",out felixRequest)&&(felixRequest=="1"||felixRequest=="2");
-  if(wantMedia||wantFelix||wantSeries||wantFacts){
-   haLast=DateTime.UtcNow;System.Threading.Interlocked.Increment(ref haBusy);bool hubs=mediaRequest=="all",wm=wantMedia,wf=wantFelix,live=felixRequest=="2";string sr=wantSeries?seriesRequest:null;bool wfa=wantFacts;
+  string mobRequest;bool wantMob=e.ReceivedAppControl.ExtraData.TryGet("quiet_mobility_request",out mobRequest)&&mobRequest=="1";
+  string mapRequest;bool wantMap=e.ReceivedAppControl.ExtraData.TryGet("quiet_basemap_request",out mapRequest)&&!string.IsNullOrEmpty(mapRequest);
+  if(wantMedia||wantFelix||wantSeries||wantFacts||wantMob||wantMap){
+   haLast=DateTime.UtcNow;System.Threading.Interlocked.Increment(ref haBusy);bool hubs=mediaRequest=="all",wm=wantMedia,wf=wantFelix,live=felixRequest=="2";string sr=wantSeries?seriesRequest:null;bool wfa=wantFacts,wmo=wantMob;string mq=wantMap?mapRequest:null;
    Task.Run(()=>{try{
+    var mobTask=wmo?Task.Run(FetchMobilityJson):Task.FromResult<string>(null);
+    var rainTask=wmo?Task.Run(FetchRainJson):Task.FromResult<string>(null);
+    var mapTask=mq!=null?Task.Run(()=>FetchBasemapJson(mq)):Task.FromResult<string>(null);
     var mediaTask=wm?Task.Run(()=>FetchMediaJson(hubs)):Task.FromResult<string>(null);
     var felixTask=wf?Task.Run(()=>FetchFelixJson(live)):Task.FromResult<string>(null);
     var seriesTask=sr!=null?Task.Run(()=>FetchSeriesJson(sr)):Task.FromResult<string>(null);
     var factsTask=wfa?Task.Run(FetchFactsJson):Task.FromResult<string>(null);
-    Task.WaitAll(mediaTask,felixTask,seriesTask,factsTask);
-    ReplyExtra(mediaTask.Result,felixTask.Result,seriesTask.Result,factsTask.Result);
+    Task.WaitAll(mediaTask,felixTask,seriesTask,factsTask,mobTask,rainTask,mapTask);
+    ReplyExtra(mediaTask.Result,felixTask.Result,seriesTask.Result,factsTask.Result,mobTask.Result,rainTask.Result,mapTask.Result);
    }catch{}finally{haLast=DateTime.UtcNow;System.Threading.Interlocked.Decrement(ref haBusy);}});
    KeepWarm();return;
   }
@@ -838,7 +1094,10 @@ public sealed class QuickLaunch : NUIApplication {
     string root;using(var doc=JsonDocument.Parse(rootReply))root=Str(doc.RootElement.GetProperty("result"),"media_content_id");
     if(root=="")return null;
     var list=new List<Dictionary<string,string>>();var seen=new HashSet<string>();int id=2;
-    foreach(var hub in new[]{"home.continue","home.ondeck"}){
+    var hubList=new List<string>{"home.continue","home.ondeck","home.movies.recent","home.television.recent"};
+    int recent=0;
+    foreach(var hub in hubList){
+     bool isRecent=hub.EndsWith(".recent");if(!isRecent&&list.Count>=8)continue;if(isRecent&&recent>=10)continue;
      string reply=BrowseMedia(ws,ct,id++,"hub",root+"/"+hub);if(reply==null)continue;
      using(var doc=JsonDocument.Parse(reply)){
       if(!doc.RootElement.GetProperty("result").TryGetProperty("children",out var children)||children.ValueKind!=JsonValueKind.Array)continue;
@@ -849,18 +1108,22 @@ public sealed class QuickLaunch : NUIApplication {
        if(ep.Success){title=ep.Groups[1].Value;sub=ep.Groups[2].Value+" · "+ep.Groups[3].Value;}
        else if(movie.Success){title=movie.Groups[1].Value;sub="Film · "+movie.Groups[2].Value;}
        else sub=type=="movie"?"Film":type=="episode"?"Épisode":"";
-       list.Add(new Dictionary<string,string>{{"Id",cid},{"Type",type},{"Title",title},{"Sub",sub},{"Thumb",Str(c,"thumbnail")}});
-       if(list.Count>=8)break;
+       list.Add(new Dictionary<string,string>{{"Id",cid},{"Type",type},{"Title",title},{"Sub",sub},{"Thumb",Str(c,"thumbnail")},{"Hub",isRecent?"recent":"continue"}});
+       if(isRecent){if(++recent>=(hub.Contains("movies")?5:10))break;}else if(list.Count(x=>x["Hub"]=="continue")>=8)break;
       }
      }
-     if(list.Count>=8)break;
     }
     return list;
    },20);
    if(raw!=null){
     Task.WaitAll(raw.Select(item=>Task.Run(()=>{string t=item["Thumb"];item["Image"]=t.StartsWith("/api/")?HaImage(t,"plex",Hash(t)):"";item.Remove("Thumb");})).ToArray());
-    PruneDir(SharedDir("plex"),new HashSet<string>(raw.Select(item=>System.IO.Path.GetFileName(item["Image"]))),24);
+    PruneDir(SharedDir("plex"),new HashSet<string>(raw.Select(item=>System.IO.Path.GetFileName(item["Image"]))),40);
     items=raw;
+    try{File.WriteAllText(System.IO.Path.Combine(SharedDir("plex"),"hubs.json"),JsonSerializer.Serialize(raw));}catch{}
+   }
+   else{
+    // No Plex player is reachable (Plex closed everywhere): keep showing the last lists.
+    try{string cached=System.IO.Path.Combine(SharedDir("plex"),"hubs.json");if(File.Exists(cached))items=JsonSerializer.Deserialize<List<Dictionary<string,string>>>(File.ReadAllText(cached));}catch{}
    }
   }
   return JsonSerializer.Serialize(new{Now=now,Items=items});
@@ -903,8 +1166,8 @@ public sealed class QuickLaunch : NUIApplication {
   PruneDir(SharedDir("felix"),new HashSet<string>{System.IO.Path.GetFileName(map)},2);
   return JsonSerializer.Serialize(new{Map=map,Stamp=stamp,States=states,Buttons=buttons,Rooms=FelixRooms()});
  }
- static int ReplyExtra(string media,string felix,string series=null,string facts=null){
-  if(media==null&&felix==null&&series==null&&facts==null)return 0;
+ static int ReplyExtra(string media,string felix,string series=null,string facts=null,string mobility=null,string rain=null,string basemap=null){
+  if(media==null&&felix==null&&series==null&&facts==null&&mobility==null&&rain==null&&basemap==null)return 0;
   IntPtr c;int r=app_control_create(out c);if(r!=0)return r;
   try{
    r=app_control_set_app_id(c,"com.samsung.tv.bixby-promotion");
@@ -914,6 +1177,9 @@ public sealed class QuickLaunch : NUIApplication {
    if(r==0&&felix!=null)r=app_control_add_extra_data(c,"quiet_felix",felix);
    if(r==0&&series!=null)r=app_control_add_extra_data(c,"quiet_series",series);
    if(r==0&&facts!=null)r=app_control_add_extra_data(c,"quiet_facts",facts);
+   if(r==0&&mobility!=null)r=app_control_add_extra_data(c,"quiet_mobility",mobility);
+   if(r==0&&rain!=null)r=app_control_add_extra_data(c,"quiet_rain",rain);
+   if(r==0&&basemap!=null)r=app_control_add_extra_data(c,"quiet_basemap",basemap);
    if(r==0)r=app_control_send_launch_request(c,IntPtr.Zero,IntPtr.Zero);
    return r;
   }finally{app_control_destroy(c);}

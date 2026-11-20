@@ -3,6 +3,7 @@ using System.IO;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using Tizen.NUI;
@@ -26,9 +27,12 @@ public sealed class QuietHome : NUIApplication
  sealed class ArticleFull { public List<string> Blocks=new List<string>(); public string Image=""; }
  sealed class NewsSection { public string Name=""; public List<NewsArticle> Items=new List<NewsArticle>(); }
  sealed class NewsSummary { public string Updated=""; public List<NewsSection> Sections=new List<NewsSection>(); }
- sealed class PlexItem { public string Id="",Type="",Title="",Sub="",Image=""; }
+ sealed class PlexItem { public string Id="",Type="",Title="",Sub="",Image="",Hub=""; }
+ sealed class BikeStation { public string Name=""; public int Dist,Mech,Ebike,Docks,Dx,Dy; public bool Open=true; }
  sealed class NowItem { public string Source="",App="",Title="",Sub="",State="",Image="",Updated=""; public double Pos,Dur; }
- readonly List<PlexItem> plexItems=new List<PlexItem>();NowItem nowPlaying;bool mediaLoaded;
+ readonly List<PlexItem> plexItems=new List<PlexItem>();bool plexOffline;NowItem nowPlaying;bool mediaLoaded;
+ readonly List<BikeStation> velib=new List<BikeStation>();readonly List<int[]> limePts=new List<int[]>();int limeCount=-1,limeNear=-1,metroDx,metroDy;string mobAt="";bool mobLoaded;DateTime lastMobilityRequest=DateTime.MinValue;
+ readonly List<KeyValuePair<string,double>> rainSlots=new List<KeyValuePair<string,double>>();TextLabel weatherRain,metroFoot;
  DateTime lastMediaRequest=DateTime.MinValue,lastHubRequest=DateTime.MinValue,lastFelixRequest=DateTime.MinValue;
  TextLabel heroTop,heroTitle,heroSub,heroTime;View heroArt,heroBar,heroFill;string heroArtPath="";
  readonly Dictionary<string,string> felix=new Dictionary<string,string>();readonly List<string[]> felixButtons=new List<string[]>();string felixMap="",felixStamp="";bool felixLoaded;
@@ -50,9 +54,9 @@ public sealed class QuietHome : NUIApplication
  TextLabel clock, weatherPlace, weatherTemperature, weatherCondition, weatherRange, notice, detail;
  TextLabel metroStatus, metroNationTime, metroEtoileTime;
  TextLabel[] tabs;
- static readonly string[] tabNav={"Accueil","Applis","Plex","Maison","Félix","Énergie","Système","Réglages"};
- static readonly int[] tabPage={0,1,8,5,9,7,6,2};
- static readonly int[] tabWidth={146,120,96,140,104,150,158,170};
+ static readonly string[] tabNav={"Accueil","Applis","Plex","Maison","Félix","Vélos","Énergie","Système","Réglages"};
+ static readonly int[] tabPage={0,1,8,5,9,10,7,6,2};
+ static readonly int[] tabWidth={146,120,96,140,104,116,150,158,170};
  static readonly string[] haSceneId={"scene.bonjour","scene.bonne_nuit","scene.film","scene.pause"};
  static readonly string[] haSceneName={"Bonjour","Bonne nuit","Film","Pause"};
  static readonly string[] haSceneIcon={"bonjour","bonnenuit","film","pause"};
@@ -227,9 +231,9 @@ public sealed class QuietHome : NUIApplication
   facts=new List<string>(randomFacts);factIndex=new Random(Environment.TickCount).Next(facts.Count);lastFactUpdate=DateTime.Now;
   RefreshSource();selected=SourceIndex();BuildPage();
   clockTimer=new Tizen.NUI.Timer(30000);
-  clockTimer.Tick+=(s,e)=>{if(clock!=null)clock.Text=DateTime.Now.ToString("HH:mm");UpdateWorldClock();if(DateTime.Now-lastGuard>=TimeSpan.FromMinutes(10))UpdateGuard();if(briefClock!=null)briefClock.Text=DateTime.Now.ToString("HH:mm");if(WantDark()!=dark){ApplyTheme();BuildPage();}else if(prefWall==1&&WallKind()!=wallKind&&editing==""&&!coverPopupOpen)BuildPage();if(!isPaused&&ambientRoot==null&&briefRoot==null&&editing==""&&(DateTime.Now-lastInput).TotalSeconds>=AmbientDelay())OpenAmbient();RequestDue();UpdateHero();if(page==0&&!factDetailOpen&&DateTime.Now-lastFactUpdate>=TimeSpan.FromMinutes(15))RotateFact();return true;};clockTimer.Start();RequestHomeData();lastSensorRequest=DateTime.Now;RequestHaStates();MaybeBrief();WriteState("created");
+  clockTimer.Tick+=(s,e)=>{if(clock!=null)clock.Text=DateTime.Now.ToString("HH:mm");UpdateWorldClock();if(DateTime.Now-lastGuard>=TimeSpan.FromMinutes(10))UpdateGuard();if(briefClock!=null)briefClock.Text=DateTime.Now.ToString("HH:mm");if(WantDark()!=dark){ApplyTheme();BuildPage();}else if(prefWall==1&&WallKind()!=wallKind&&editing==""&&!coverPopupOpen)BuildPage();if(!isPaused&&ambientRoot==null&&briefRoot==null&&editing==""&&(DateTime.Now-lastInput).TotalSeconds>=AmbientDelay())OpenAmbient();RequestDue();UpdateHero();if(page==0&&!factDetailOpen&&DateTime.Now-lastFactUpdate>=TimeSpan.FromMinutes(15))RotateFact();return true;};clockTimer.Start();RequestHomeData();lastSensorRequest=DateTime.Now;RequestHaStates();MaybeBrief();SendWatch();WriteState("created");
  }
- protected override void OnResume(){base.OnResume();isPaused=false;lastInput=DateTime.Now;clockTimer?.Start();UpdateGuard();if(tabs!=null&&WantDark()!=dark){ApplyTheme();BuildPage();}bool themeDue=WantDark()!=dark;if(themeDue)ApplyTheme();bool rebuild=(themeDue||usageDirty&&(page==0||page==1))&&tabs!=null;usageDirty=false;if(rebuild)BuildPage();if(page==6)StartSystemTimer();RefreshSource();if(tabs!=null&&page==2){RefreshSettings();UpdateFocus(false);}RequestDue();MaybeBrief();WriteState("resumed");}
+ protected override void OnResume(){base.OnResume();isPaused=false;lastInput=DateTime.Now;clockTimer?.Start();UpdateGuard();if(tabs!=null&&WantDark()!=dark){ApplyTheme();BuildPage();}bool themeDue=WantDark()!=dark;if(themeDue)ApplyTheme();bool rebuild=(themeDue||usageDirty&&(page==0||page==1))&&tabs!=null;usageDirty=false;if(rebuild)BuildPage();if(page==6)StartSystemTimer();RefreshSource();if(tabs!=null&&page==2){RefreshSettings();UpdateFocus(false);}RequestDue();MaybeBrief();SendWatch();WriteState("resumed");}
  protected override void OnAppControlReceived(AppControlReceivedEventArgs e)
  {
   base.OnAppControlReceived(e);
@@ -252,13 +256,16 @@ public sealed class QuietHome : NUIApplication
   else if(requested=="show:close"){CloseBrief(false);pictureOpen=false;cleanOpen=false;BuildPage();}
   else if(requested=="show:picture"){page=2;area=1;selected=3;BuildPage();OpenPicture();}
   else if(requested=="show:clean"){page=9;area=1;selected=0;cleanOpen=true;cleanRow=0;cleanCol=0;BuildPage();}
-  else if(requested!=null&&requested.StartsWith("show:")){CloseBrief(false);int n;if(int.TryParse(requested.Substring(5),out n)&&n>=0&&n<=9){page=n;area=1;selected=0;BuildPage();}}
+  else if(requested!=null&&requested.StartsWith("show:")){CloseBrief(false);int n;if(int.TryParse(requested.Substring(5),out n)&&n>=0&&n<=10){page=n;area=1;selected=0;BuildPage();}}
   else if(requested=="extra"){
    string value;
    if(e.ReceivedAppControl.ExtraData.TryGet("quiet_media",out value))ReceiveMedia(value);
    if(e.ReceivedAppControl.ExtraData.TryGet("quiet_felix",out value))ReceiveFelix(value);
    if(e.ReceivedAppControl.ExtraData.TryGet("quiet_series",out value))ReceiveSeries(value);
    if(e.ReceivedAppControl.ExtraData.TryGet("quiet_facts",out value))ReceiveFacts(value);
+   if(e.ReceivedAppControl.ExtraData.TryGet("quiet_mobility",out value))ReceiveMobility(value);
+   if(e.ReceivedAppControl.ExtraData.TryGet("quiet_rain",out value))ReceiveRain(value);
+   if(e.ReceivedAppControl.ExtraData.TryGet("quiet_basemap",out value))ReceiveBasemap(value);
   }
   else if(requested=="weather"||requested=="transit"||requested=="traffic"||requested=="data"||requested=="news"){
    string value;
@@ -279,7 +286,7 @@ public sealed class QuietHome : NUIApplication
    UpdateBrief();
   }else Home("home_request");
  }
- protected override void OnPause(){base.OnPause();isPaused=true;CloseAmbient();CloseBrief(false);pictureOpen=false;cleanOpen=false;lightOpen=false;catalogOpen=false;editing="";clockTimer?.Stop();systemTimer?.Stop();haRefreshTimer?.Stop();WriteState("paused");}
+ protected override void OnPause(){base.OnPause();isPaused=true;CloseAmbient();CloseBrief(false);pictureOpen=false;cleanOpen=false;lightOpen=false;catalogOpen=false;editing="";clockTimer?.Stop();systemTimer?.Stop();haRefreshTimer?.Stop();SendWatch();WriteState("paused");}
  void CloseOverlays(){newsMenuOpen=false;newsDetailOpen=false;quoteDetailOpen=false;factDetailOpen=false;forecastDetailOpen=false;lineDetailOpen=false;coverPopupOpen=false;lightOpen=false;catalogOpen=false;pictureOpen=false;cleanOpen=false;editing="";}
  void Home(string activity){clockTimer?.Start();RefreshSource();if(tabs!=null){bool unchanged=page==0&&area==1&&editing==""&&selected==SourceIndex()&&!newsMenuOpen&&!factDetailOpen&&!lightOpen&&!coverPopupOpen&&!pictureOpen&&!cleanOpen;page=0;area=1;CloseOverlays();selectedForecastHour=-1;selectedForecastDay=-1;selected=SourceIndex();if(!unchanged)BuildPage();RequestDue();MaybeBrief();WriteState(activity);}}
  void OpenSettings(string activity){clockTimer?.Start();page=2;area=1;selected=0;editing="";newsMenuOpen=false;newsDetailOpen=false;factDetailOpen=false;forecastDetailOpen=false;selectedForecastHour=-1;selectedForecastDay=-1;BuildPage();WriteState(activity);}
@@ -304,7 +311,7 @@ public sealed class QuietHome : NUIApplication
   weatherTemperature=Label(weatherTemperatureText,116,44,232,112,76,ink,"Semibold");weatherTemperature.Ellipsis=false;weatherCard.Add(weatherTemperature);
   weatherCondition=Label(weatherConditionText,350,86,146,60,18,ink,"Semibold");weatherCondition.MultiLine=true;weatherCard.Add(weatherCondition);
   weatherRange=Label(WeatherRange(),128,156,348,24,16,muted,"Medium");weatherCard.Add(weatherRange);
-  weatherCard.Add(Label("OK · Prévisions du jour et sur 7 jours",128,180,348,24,15,muted,"Medium"));
+  weatherRain=Label(RainText(),128,180,348,24,15,RainColor(),"Semibold");weatherCard.Add(weatherRain);
   DrawWeatherIcon();AnimateWeatherIcon(weatherIcon,1.2f);
   weatherSlotIndex=slots.Count;
   slots.Add(new Slot{Card=weatherCard,Label=weatherPlace,Name="Météo Paris 12e",Action="weather",Description="Prévisions du jour et sur 7 jours",Row=-2,X=x,Y=y,W=w,H=h});
@@ -319,7 +326,7 @@ public sealed class QuietHome : NUIApplication
   metroStatus=Label(MetroStatusText(),292,17,184,27,16,TrafficColor(),"Semibold");metroStatus.HorizontalAlignment=HorizontalAlignment.End;metroCard.Add(metroStatus);
   metroNationTime=AddMetroTileDirection("Nation","Nation",58);
   metroEtoileTime=AddMetroTileDirection("Charles-de-Gaulle–Étoile","Etoile",116);
-  metroCard.Add(Label("OK · 2 prochains passages par direction",24,176,452,25,15,new Color(.82f,.87f,.94f,1),"Medium"));
+  metroFoot=Label(MetroFoot(),24,176,452,25,15,new Color(.82f,.87f,.94f,1),"Medium");metroCard.Add(metroFoot);
   metroSlotIndex=slots.Count;
   slots.Add(new Slot{Card=metroCard,Shadow=shadow,Label=metroStatus,Name="Métro 6 · Bel-Air",Action="metro",Description="2 prochains passages par direction",Row=-2,X=x,Y=y,W=w,H=h});
  }
@@ -601,12 +608,12 @@ public sealed class QuietHome : NUIApplication
   if(focusAnimation!=null){focusAnimation.Stop();focusAnimation.Dispose();focusAnimation=null;}
   ClearWeatherAnimations();ClearRainAnimations();hourCards.Clear();dayCards.Clear();
   ParkArtwork();pageArtworkCold=0;
-  foreach(var v in scene){Window.Default.Remove(v);v.Dispose();}scene.Clear();slots.Clear();homeSensorValue=null;weatherGlyphs.Clear();weatherCard=null;weatherIcon=null;weatherSlotIndex=-1;metroCard=null;metroSlotIndex=-1;marketSlotIndex=-1;factSlotIndex=-1;newsButtonSlotIndex=-1;newsCategorySlotStart=-1;newsArticleSlotStart=-1;newsTopTitle=null;marketHeadline=null;marketValue=null;marketChange=null;marketTime=null;marketSub=null;marketChartHost=null;cinemaState=null;felixState=null;cinemaCard=null;cinemaDot=null;factBody=null;metroStatus=null;metroNationTime=null;metroEtoileTime=null;weatherPlace=null;weatherTemperature=null;weatherCondition=null;weatherRange=null;heroTop=null;heroTitle=null;heroSub=null;heroTime=null;heroArt=null;heroBar=null;heroFill=null;heroArtPath="";worldParis=null;worldBa=null;
+  foreach(var v in scene){Window.Default.Remove(v);v.Dispose();}scene.Clear();slots.Clear();homeSensorValue=null;weatherRain=null;metroFoot=null;weatherGlyphs.Clear();weatherCard=null;weatherIcon=null;weatherSlotIndex=-1;metroCard=null;metroSlotIndex=-1;marketSlotIndex=-1;factSlotIndex=-1;newsButtonSlotIndex=-1;newsCategorySlotStart=-1;newsArticleSlotStart=-1;newsTopTitle=null;marketHeadline=null;marketValue=null;marketChange=null;marketTime=null;marketSub=null;marketChartHost=null;cinemaState=null;felixState=null;cinemaCard=null;cinemaDot=null;factBody=null;metroStatus=null;metroNationTime=null;metroEtoileTime=null;weatherPlace=null;weatherTemperature=null;weatherCondition=null;weatherRange=null;heroTop=null;heroTitle=null;heroSub=null;heroTime=null;heroArt=null;heroBar=null;heroFill=null;heroArtPath="";worldParis=null;worldBa=null;
   AddWallpaper();
   var brandMark=Panel(80,22,27,27,accent,8);var brandLetter=Label("B",0,0,27,27,17,white,"Semibold");brandLetter.HorizontalAlignment=HorizontalAlignment.Center;brandMark.Add(brandLetter);
   Text("BelAir OS",118,20,150,31,19,muted,"Semibold");
   Text("Build "+BuildTag,234,24,250,27,15,Tx(.56f,.6f,.66f,1),"Medium");
-  string title=page==0?"Accueil":page==1?"Mes applications":page==2?"Réglages rapides":page==3?"Météo · Paris 12e":page==4?"Information trafic":page==6?"Informations TV":page==7?"Électricité":page==8?"Plex":page==9?"Félix":"Maison";
+  string title=page==0?"Accueil":page==1?"Mes applications":page==2?"Réglages rapides":page==3?"Météo · Paris 12e":page==4?"Information trafic":page==6?"Informations TV":page==7?"Électricité":page==8?"Plex":page==9?"Félix":page==10?"Vélos":"Maison";
   Text(title,76,55,page==0?1050:1350,100,76,ink,"Display");
   tabs=new TextLabel[tabNav.Length];
   for(int i=0,tx=54;i<tabNav.Length;tx+=tabWidth[i]+6,i++){tabs[i]=Text(tabNav[i],tx,158,tabWidth[i],68,30,muted);tabs[i].HorizontalAlignment=HorizontalAlignment.Center;}
@@ -645,7 +652,7 @@ public sealed class QuietHome : NUIApplication
    AppearanceTile("Fond d’écran","pref:wall","Classique, météo du moment, affiche Plex ou aurore",4);
    AppearanceTile("Brief du matin","pref:brief","Résumé au premier allumage, de 5 h à 11 h",5);
    if(pictureOpen)BuildPicturePopup();
-  }else if(page==3)BuildForecast();else if(page==4)BuildMetroDetail();else if(page==6)BuildSystemInfo();else if(page==7)BuildEnergy();else if(page==8)BuildPlex();else if(page==9)BuildFelix();else BuildHomeAssistant();
+  }else if(page==3)BuildForecast();else if(page==4)BuildMetroDetail();else if(page==6)BuildSystemInfo();else if(page==7)BuildEnergy();else if(page==8)BuildPlex();else if(page==9)BuildFelix();else if(page==10)BuildBikes();else BuildHomeAssistant();
   if(page==0){
   Add(new ImageView{ResourceUrl=Root+"glass-shelf.svg",Position2D=new Position2D(80,842),Size2D=new Size2D(1760,172),Opacity=dark?.16f:1f});
   var dk=new[]{new[]{"Netflix","atv:org.tizen.netflix-app:Netflix","netflix"},new[]{"YouTube","atv:com.samsung.tv.cobalt-yt:YouTube","youtube"},new[]{"CANAL+","atv:QmpwflxWdt.CanalPlusLauncher:CANAL+","canal-plus"},new[]{"Plex","atv:kIciSQlYEM.plex:Plex","plex"},new[]{"Prime Video","atv:org.tizen.primevideo:Prime Video","prime"},new[]{"Apple TV","atv:com.samsung.tv.aria-video:TV","apple-tv"},new[]{"France 2 en direct","channel:france-2","france-2"}};
@@ -657,11 +664,12 @@ public sealed class QuietHome : NUIApplication
   toolbarHint=Text("",1530,170,310,45,24,ink);toolbarHint.HorizontalAlignment=HorizontalAlignment.End;
   detail=Text("",80,1030,1320,35,20,muted);
   notice=Text("",80,1008,1760,34,22,accent);
-  string hintText=newsMenuOpen?(newsDetailOpen?"Retour pour revenir aux actualités":"OK pour ouvrir · Retour pour fermer"):page==1?(AppLibrary.PageCount(library.Count)<=1?"OK pour ouvrir · Retour à l’accueil":libraryPage+1<AppLibrary.PageCount(library.Count)?"Bas pour voir la suite · Retour à l’accueil":"Haut pour la page précédente · Retour à l’accueil"):page==3?"↓ heures · ←/→ défiler · Retour fermer":page==4||page==8||page==9?"Retour à l’accueil":"Retour à l’entrée";
+  string hintText=newsMenuOpen?(newsDetailOpen?"Retour pour revenir aux actualités":"OK pour ouvrir · Retour pour fermer"):page==1?(AppLibrary.PageCount(library.Count)<=1?"OK pour ouvrir · Retour à l’accueil":libraryPage+1<AppLibrary.PageCount(library.Count)?"Bas pour voir la suite · Retour à l’accueil":"Haut pour la page précédente · Retour à l’accueil"):page==3?"↓ heures · ←/→ défiler · Retour fermer":page==4||page==8||page==9||page==10?"Retour à l’accueil":"Retour à l’entrée";
   var hint=Text(hintText,1310,1030,530,35,20,muted);hint.HorizontalAlignment=HorizontalAlignment.End;
   if(page==0&&newsMenuOpen){if(newsDetailOpen)BuildNewsDetail();else{BuildNewsDropdown();if(quoteDetailOpen)BuildQuoteDetail();}}
   if(page==0&&factDetailOpen)BuildFactDetail();
   selected=Math.Max(0,Math.Min(selected,slots.Count-1));UpdateFocus(false);
+  if(page==10&&mapSel>=0)ApplyMapMode();
   buildMilliseconds=stopwatch.ElapsedMilliseconds;WriteState("page_ready");
  }
  void BuildForecast()
@@ -2083,9 +2091,9 @@ public sealed class QuietHome : NUIApplication
   for(int i=0;i<slots.Count;i++){
    var s=slots[i];bool newsControl=s.Action.StartsWith("news_category:")||s.Action.StartsWith("news_item:")||s.Action.StartsWith("quote:");
    bool f=factDetailOpen?false:page==3?area==3&&selected==i:newsMenuOpen?newsControl&&area!=9&&!quoteDetailOpen&&selected==i:area!=0&&area!=9&&selected==i;
-   float scale=f?(page==8||page==9?(s.H>120?1.06f:1.05f):page==2&&s.Row==2?1.04f:page==5||page==4?1.05f:s.Action=="news"?1.035f:newsControl?1.015f:page==1&&s.Row>=0?1.055f:page==2&&s.Row>=0?1.035f:s.Row==0?1.05f:s.Row==1?(page==0?1.14f:1.03f):s.Row==-2?1.025f:s.Row==-1?1.18f:1):1;
-   s.Card.BorderlineWidth=page==8||page==9||page==2&&s.Row==2?(f?4:0):page==5||page==4?(f?3:0):s.Action=="news"?(f?3:0):newsControl?(f?4:0):s.Row==1?(f?3:0):page==1&&s.Row>=0?(f?4:1):s.Row==-2?(f?4:0):s.Row==-1?(f?4:0):s.Row==0?1:0;
-   s.Card.BorderlineColor=(page==1||page==4||page==5||page==8||page==9||page==2&&s.Row==2||s.Row==-1||newsControl)&&f?accent:new Color(1,1,1,f?.8f:.28f);
+   float scale=f?(page==8||page==9||page==10?(s.H>120?1.06f:1.05f):page==2&&s.Row==2?1.04f:page==5||page==4?1.05f:s.Action=="news"?1.035f:newsControl?1.015f:page==1&&s.Row>=0?1.055f:page==2&&s.Row>=0?1.035f:s.Row==0?1.05f:s.Row==1?(page==0?1.14f:1.03f):s.Row==-2?1.025f:s.Row==-1?1.18f:1):1;
+   s.Card.BorderlineWidth=page==8||page==9||page==10||page==2&&s.Row==2?(f?4:0):page==5||page==4?(f?3:0):s.Action=="news"?(f?3:0):newsControl?(f?4:0):s.Row==1?(f?3:0):page==1&&s.Row>=0?(f?4:1):s.Row==-2?(f?4:0):s.Row==-1?(f?4:0):s.Row==0?1:0;
+   s.Card.BorderlineColor=(page==1||page==4||page==5||page==8||page==9||page==10||page==2&&s.Row==2||s.Row==-1||newsControl)&&f?accent:new Color(1,1,1,f?.8f:.28f);
    var pos=new Position(s.X+s.W/2f,s.Y+s.H/2f-(f&&(s.Row==0||(page==1||page==8)&&s.Row>=0)?5:0),0);
    if(animate){focusAnimation.AnimateTo(s.Card,"Scale",new Vector3(scale,scale,1));focusAnimation.AnimateTo(s.Card,"Position",pos);}else{s.Card.Scale=new Vector3(scale,scale,1);s.Card.Position=pos;}
    if(s.Shadow!=null)s.Shadow.Opacity=f?1:.55f;
@@ -2103,7 +2111,7 @@ public sealed class QuietHome : NUIApplication
   }
   if(focusAnimation!=null)focusAnimation.Play();
   if(clock!=null)clock.Opacity=page==3||page==4||page!=0&&area==3?0:1;toolbarHint.Text=area==3?slots[selected].Name:"";
-  detail.Text=quoteDetailOpen?"←/→ échelle · ↑/↓ action précédente ou suivante · Retour pour fermer":area==11?"←/→ choisir · OK graphique du jour · ↑ rubriques · ↓ articles":page==3&&area==5?"←/→ heures · ↓ jours · OK détail · ↑ menu":page==3&&area==6?"←/→ jours · ↑ heures · OK détail":area==7?"←/→ rubrique · ↓ titres · OK pour afficher":area==8?"↑ rubriques · ←/→ changer · OK pour le détail":area==4&&selected==metroSlotIndex?"OK pour voir les 2 prochains métros par direction":area==4?"OK pour les prévisions du jour et sur 7 jours":(page==1||page==8||page==9)&&area==1&&slots[selected].Row>=0?slots[selected].Name+" · "+slots[selected].Description:area==0&&page==0?"↑ Actualités · gauche/droite pour changer d’écran":area==0?"":area==2?slots[selected].Name:"";
+  detail.Text=quoteDetailOpen?"←/→ échelle · ↑/↓ action précédente ou suivante · Retour pour fermer":area==11?"←/→ choisir · OK graphique du jour · ↑ rubriques · ↓ articles":page==3&&area==5?"←/→ heures · ↓ jours · OK détail · ↑ menu":page==3&&area==6?"←/→ jours · ↑ heures · OK détail":area==7?"←/→ rubrique · ↓ titres · OK pour afficher":area==8?"↑ rubriques · ←/→ changer · OK pour le détail":area==4&&selected==metroSlotIndex?"OK pour voir les 2 prochains métros par direction":area==4?"OK pour les prévisions du jour et sur 7 jours":(page==1||page==8||page==9||page==10)&&area==1&&slots[selected].Row>=0?slots[selected].Name+" · "+slots[selected].Description:area==0&&page==0?"↑ Actualités · gauche/droite pour changer d’écran":area==0?"":area==2?slots[selected].Name:"";
   if(page==2){
    slots[0].Label.Text=currentVolume<0?"Indisponible":currentVolume.ToString();
    slots[1].Label.Text=SettingName("brightness");
@@ -2152,7 +2160,9 @@ public sealed class QuietHome : NUIApplication
     if(HandleGridKey(k,"metro_back"))return;
     if(k=="Up"||k=="Down")return;
    }
-   if((page==8||page==9)&&HandleGridKey(k,page==8?"plex_back":"felix_back"))return;
+   if(page==10&&mapSel>=0){HandleMapKey(k);return;}
+   if(page==10&&area==1&&k=="Right"&&velib.Count+limePts.Count>0){EnterMap();return;}
+   if((page==8||page==9||page==10)&&HandleGridKey(k,page==8?"plex_back":"felix_back"))return;
    if(page==2&&editing==""&&(area==1||area==2||area==10)&&(k=="Up"||k=="Down"||k=="Left"||k=="Right")){
     int row=area==10?2:area-1;var r=Row(row);int col=Math.Max(0,r.IndexOf(selected));
     if(k=="Left"||k=="Right"){selected=r[(col+(k=="Left"?-1:1)+r.Count)%r.Count];UpdateFocus();return;}
@@ -2459,7 +2469,8 @@ public sealed class QuietHome : NUIApplication
   bool np=(page==0||page==8)&&now-lastMediaRequest>=TimeSpan.FromSeconds(page==8?25:55);
   bool hubs=(page==8||briefRoot!=null||page==0&&prefWall==2)&&now-lastHubRequest>=TimeSpan.FromMinutes(plexItems.Count==0?1:10);
   bool fx=page==9&&now-lastFelixRequest>=TimeSpan.FromSeconds(110);
-  if(np||hubs||fx)RequestExtra(np||hubs,hubs,fx);
+  bool mob=(page==0||page==10)&&now-lastMobilityRequest>=TimeSpan.FromSeconds(page==10?60:150);
+  if(np||hubs||fx||mob)RequestExtra(np||hubs,hubs,fx,false,mob);
   if(!(w||m||t||n||k))return;
   if(w)lastWeatherRequest=now;if(m)lastMetroRequest=now;if(t){lastTrafficRequest=now;lastLinesRequest=now;}if(n)lastNewsRequest=now;if(k)lastMarketsRequest=now;
   SendDataRequest(w,m,t,n,t,k);
@@ -2758,9 +2769,9 @@ public sealed class QuietHome : NUIApplication
   chart.Add(Label("Relevés Linky via Octopus Energy · publiés avec un jour de décalage · OK pour actualiser",32,556,1700,28,16,muted,"Medium"));
  }
  // ---- media: what plays on the Apple TV (home hero) and Plex "Reprendre" (Plex page) ----
- void RequestExtra(bool media,bool hubs,bool felixData,bool live=false)
+ void RequestExtra(bool media,bool hubs,bool felixData,bool live=false,bool mobility=false)
  {
-  if(isPaused)return;var now=DateTime.Now;
+  if(isPaused)return;var now=DateTime.Now;if(mobility)lastMobilityRequest=now;
   if(media)lastMediaRequest=now;if(hubs)lastHubRequest=now;if(felixData)lastFelixRequest=now;
   IntPtr c;int r=app_control_create(out c);
   if(r==0){try{
@@ -2768,6 +2779,7 @@ public sealed class QuietHome : NUIApplication
    if(r==0)r=app_control_set_operation(c,"http://tizen.org/appcontrol/operation/default");
    if(r==0&&(media||hubs))r=app_control_add_extra_data(c,"quiet_media_request",hubs?"all":"now");
    if(r==0&&felixData)r=app_control_add_extra_data(c,"quiet_felix_request",live?"2":"1");
+   if(r==0&&mobility)r=app_control_add_extra_data(c,"quiet_mobility_request","1");
    if(r==0&&DateTime.Now-lastFactsRequest>=TimeSpan.FromHours(6)){lastFactsRequest=DateTime.Now;r=app_control_add_extra_data(c,"quiet_facts_request","1");}
    if(r==0)r=app_control_send_launch_request(c,IntPtr.Zero,IntPtr.Zero);
   }finally{app_control_destroy(c);}}
@@ -2785,11 +2797,12 @@ public sealed class QuietHome : NUIApplication
     nowChanged=(next==null)!=(nowPlaying==null)||next!=null&&(next.Title!=nowPlaying.Title||next.Sub!=nowPlaying.Sub||next.State!=nowPlaying.State||next.Image!=nowPlaying.Image);
     nowPlaying=next;
    }
-   if(root.TryGetProperty("Items",out var items)&&items.ValueKind==JsonValueKind.Array){
+   if(root.TryGetProperty("Items",out var noItems)&&noItems.ValueKind==JsonValueKind.Null&&!mediaLoaded){plexOffline=true;itemsChanged=true;}
+   if(root.TryGetProperty("Items",out var items)&&items.ValueKind==JsonValueKind.Array){plexOffline=false;
     var list=new List<PlexItem>();
-    foreach(var it in items.EnumerateArray())list.Add(new PlexItem{Id=JStr(it,"Id"),Type=JStr(it,"Type"),Title=JStr(it,"Title"),Sub=JStr(it,"Sub"),Image=JStr(it,"Image")});
+    foreach(var it in items.EnumerateArray())list.Add(new PlexItem{Id=JStr(it,"Id"),Type=JStr(it,"Type"),Title=JStr(it,"Title"),Sub=JStr(it,"Sub"),Image=JStr(it,"Image"),Hub=JStr(it,"Hub")=="recent"?"recent":"continue"});
     itemsChanged=!mediaLoaded||list.Count!=plexItems.Count;
-    for(int i=0;!itemsChanged&&i<list.Count;i++)itemsChanged=list[i].Id!=plexItems[i].Id||list[i].Image!=plexItems[i].Image;
+    for(int i=0;!itemsChanged&&i<list.Count;i++)itemsChanged=list[i].Id!=plexItems[i].Id||list[i].Image!=plexItems[i].Image||list[i].Hub!=plexItems[i].Hub;
     plexItems.Clear();plexItems.AddRange(list);mediaLoaded=true;
    }
   }}catch{}
@@ -2862,21 +2875,184 @@ public sealed class QuietHome : NUIApplication
  void BuildPlex()
  {
   if(!mediaLoaded&&DateTime.Now-lastHubRequest>=TimeSpan.FromSeconds(15))RequestExtra(true,true,false);
-  Text(nowPlaying!=null?"En cours et à reprendre":"Reprendre",80,236,1100,44,30,ink,"Semibold");
-  var src=Text("Continuer à regarder et À suivre · PlexAir",900,240,940,36,19,muted,"Medium");src.HorizontalAlignment=HorizontalAlignment.End;
-  int cw=410,ch=231,gx=40,rowH=ch+96,n=0;
+  int cw=328,ch=185,gx=30;
+  var cont=plexItems.Where(i=>i.Hub!="recent").ToList();var recent=plexItems.Where(i=>i.Hub=="recent").ToList();
+  // row 0: what is playing, then Continue watching / On deck
+  Text(nowPlaying!=null?"En cours et à reprendre":"Reprendre",80,232,1100,44,30,ink,"Semibold");
+  var src=Text("PlexAir",900,236,940,36,19,muted,"Medium");src.HorizontalAlignment=HorizontalAlignment.End;
+  int n=0;
   if(nowPlaying!=null){
-   var np=nowPlaying;var card=MediaCard(80,296,cw,ch,np.Image,true,np.State=="playing"?"EN LECTURE":"EN PAUSE",np.App!=""?np.App:np.Source);
-   Text(Clip(np.Title,32),80,296+ch+12,cw,36,25,ink,"Semibold");Text(Clip((np.App!=""?np.App+" · ":"")+np.Sub,42),80,296+ch+48,cw,30,19,muted,"Medium");
-   slots.Add(new Slot{Card=card,Name=np.Title,Action="now_playing",Description=np.Source=="Apple TV"?"OK pour revenir sur l’Apple TV":"OK pour ouvrir Plex",Row=0,X=80,Y=296,W=cw,H=ch});n=1;
+   var np=nowPlaying;var card=MediaCard(80,284,cw,ch,np.Image,true,np.State=="playing"?"EN LECTURE":"EN PAUSE",np.App!=""?np.App:np.Source);
+   Text(Clip(np.Title,26),80,284+ch+10,cw,32,22,ink,"Semibold");Text(Clip((np.App!=""?np.App+" · ":"")+np.Sub,34),80,284+ch+42,cw,28,17,muted,"Medium");
+   slots.Add(new Slot{Card=card,Name=np.Title,Action="now_playing",Description=np.Source=="Apple TV"?"OK pour revenir sur l’Apple TV":"OK pour ouvrir Plex",Row=0,X=80,Y=284,W=cw,H=ch});n=1;
   }
-  for(int i=0;i<plexItems.Count&&n<8;i++,n++){
-   var it=plexItems[i];int col=n%4,row=n/4,x=80+col*(cw+gx),y=296+row*rowH;
-   var card=MediaCard(x,y,cw,ch,it.Image,it.Type=="movie","");
-   Text(Clip(it.Title,32),x,y+ch+12,cw,36,25,ink,"Semibold");Text(Clip(it.Sub,42),x,y+ch+48,cw,30,19,muted,"Medium");
-   slots.Add(new Slot{Card=card,Name=it.Title,Action="plex_play:"+it.Id,Description=(it.Sub!=""?it.Sub+" · ":"")+"OK pour reprendre dans Plex",Row=row,X=x,Y=y,W=cw,H=ch});
+  for(int i=0;i<cont.Count&&n<5;i++,n++)PlexCard(cont[i],80+n*(cw+gx),284,cw,ch,0,"OK pour reprendre dans Plex");
+  if(n==0)Text(mediaLoaded?"Rien à reprendre sur Plex pour le moment.":plexOffline?"Ouvrez Plex une fois sur l’Apple TV ou la TV : la liste sera ensuite gardée ici.":"Chargement de Plex…",80,290,1600,50,26,muted,"Medium");
+  // row 1: recently added movies and episodes
+  Text("Ajoutés récemment",80,580,1100,44,30,ink,"Semibold");
+  for(int i=0;i<recent.Count&&i<5;i++)PlexCard(recent[i],80+i*(cw+gx),632,cw,ch,1,"OK pour lancer dans Plex");
+  if(recent.Count==0)Text(mediaLoaded||plexOffline?"La liste apparaîtra la prochaine fois que Plex sera ouvert.":"Chargement de Plex…",80,638,1500,50,24,muted,"Medium");
+ }
+ void PlexCard(PlexItem it,int x,int y,int cw,int ch,int row,string hint)
+ {
+  var card=MediaCard(x,y,cw,ch,it.Image,it.Type=="movie","");
+  Text(Clip(it.Title,26),x,y+ch+10,cw,32,22,ink,"Semibold");Text(Clip(it.Sub,34),x,y+ch+42,cw,28,17,muted,"Medium");
+  slots.Add(new Slot{Card=card,Name=it.Title,Action="plex_play:"+it.Id,Description=(it.Sub!=""?it.Sub+" · ":"")+hint,Row=row,X=x,Y=y,W=cw,H=ch});
+ }
+ // ---- Vélos: Vélib' stations around Bel-Air and Lime bikes on a small plan centred on the metro ----
+ // Plan navigation: → from a station tile enters the plan, arrows hop between Lime bikes and stations, Back returns.
+ int mapSel=-1;
+ List<int[]> MapTargets(){var t=new List<int[]>();for(int i=0;i<velib.Count&&i<4;i++)t.Add(new[]{velib[i].Dx,velib[i].Dy,1,i});for(int i=0;i<limePts.Count;i++)t.Add(new[]{limePts[i][0],limePts[i][1],0,i});return t;}
+ void EnterMap(){var t=MapTargets();if(t.Count==0)return;int best=0;double bd=double.MaxValue;int st=selected>=0&&selected<slots.Count?slots[selected].Row:0;
+  if(st>=0&&st<velib.Count){for(int i=0;i<t.Count;i++)if(t[i][2]==1&&t[i][3]==st){best=i;break;}}else for(int i=0;i<t.Count;i++){double d=Math.Abs(t[i][0])+Math.Abs(t[i][1]);if(d<bd){bd=d;best=i;}}
+  mapSel=best;BuildPage();}
+ void HandleMapKey(string k)
+ {
+  var t=MapTargets();if(t.Count==0||mapSel>=t.Count){mapSel=-1;BuildPage();return;}
+  if(k=="XF86Back"||k=="Back"||k=="Escape"||k=="XF86Exit"){int row=t[mapSel][2]==1?t[mapSel][3]:0;mapSel=-1;BuildPage();var r=Row(row);if(r.Count>0){selected=r[0];UpdateFocus();}return;}
+  int dx=k=="Left"?-1:k=="Right"?1:0,dy=k=="Up"?1:k=="Down"?-1:0;if(dx==0&&dy==0)return;
+  var cur=t[mapSel];int best=-1;double bs=double.MaxValue;
+  for(int i=0;i<t.Count;i++){if(i==mapSel)continue;double ax=t[i][0]-cur[0],ay=t[i][1]-cur[1];double along=ax*dx+ay*dy,across=Math.Abs(ax*dy-ay*dx);if(along<=4)continue;double score=along+across*2.2;if(score<bs){bs=score;best=i;}}
+  if(best<0){if(k=="Left"){int row=cur[2]==1?cur[3]:0;mapSel=-1;BuildPage();var r=Row(row);if(r.Count>0){selected=r[0];UpdateFocus();}}return;}
+  mapSel=best;BuildPage();
+ }
+ void ApplyMapMode()
+ {
+  foreach(var sl in slots){sl.Card.Scale=new Vector3(1,1,1);sl.Card.BorderlineWidth=0;}
+  detail.Text="Flèches : parcourir la carte · Retour : revenir aux stations";
+ }
+ const int bikeMapX=560,bikeMapY=290,bikeMapW=1280,bikeMapH=690,bikeMapR=430;
+ readonly List<Tuple<string,int,int>> basemapTiles=new List<Tuple<string,int,int>>();int basemapSize;string basemapKey="";DateTime lastBasemapRequest=DateTime.MinValue;
+ string BasemapKey(){return (dark?"dark":"light")+"|"+bikeMapW+"|"+bikeMapH+"|"+bikeMapR;}
+ bool BasemapReady(){return basemapKey==BasemapKey();}
+ void BuildBikes()
+ {
+  if(!mobLoaded&&DateTime.Now-lastMobilityRequest>=TimeSpan.FromSeconds(10))RequestExtra(false,false,false,false,true);
+  if(basemapKey!=BasemapKey()&&DateTime.Now-lastBasemapRequest>=TimeSpan.FromSeconds(30)){lastBasemapRequest=DateTime.Now;RequestBasemap();}
+  Text("Vélib’ autour de chez vous",80,232,1000,44,30,ink,"Semibold");
+  var src=Text(mobAt!=""?"Vélib’ Métropole et Lime · à "+mobAt:"",1140,236,700,36,19,muted,"Medium");src.HorizontalAlignment=HorizontalAlignment.End;
+  var mechC=new Color(.24f,.66f,.36f,1);var eC=new Color(.18f,.50f,.93f,1);var pinInk=new Color(.10f,.12f,.16f,1);
+  // four compact station tiles, numbered like the pins on the plan
+  int cw=460,ch=160,gy=16;
+  if(velib.Count==0)Text(mobLoaded?"Stations Vélib’ indisponibles.":"Chargement des stations…",80,300,460,50,24,muted,"Medium");
+  for(int i=0;i<velib.Count&&i<4;i++){
+   var st=velib[i];int x=80,y=290+i*(ch+gy);
+   var card=Panel(x+cw/2,y+ch/2,cw,ch,Sf(1,1,1,.92f),22);card.PivotPoint=new Position(.5f,.5f,.5f);card.PositionUsesPivotPoint=true;
+   var badge=new View{Position2D=new Position2D(20,18),Size2D=new Size2D(38,38),CornerRadius=new Vector4(19,19,19,19),BackgroundColor=white,BorderlineWidth=4,BorderlineColor=eC};card.Add(badge);
+   var bn=Label((i+1).ToString(),0,0,38,38,19,pinInk,"Semibold");bn.HorizontalAlignment=HorizontalAlignment.Center;badge.Add(bn);
+   card.Add(Label(Clip(st.Name,26),70,14,cw-140,34,23,ink,"Semibold"));
+   var dist=Label(st.Open?st.Dist+" m":"fermée",cw-110,16,90,30,18,st.Open?muted:new Color(.89f,.22f,.17f,1),"Medium");dist.HorizontalAlignment=HorizontalAlignment.End;card.Add(dist);
+   int sw=(cw-40)/3;int[] vals={st.Mech,st.Ebike,st.Docks};string[] caps={"mécaniques","électriques","places"};Color[] cols={mechC,eC,ink};
+   for(int k=0;k<3;k++){card.Add(Label(vals[k].ToString(),20+k*sw,58,sw,56,46,vals[k]==0?muted:cols[k],"Display"));card.Add(Label(caps[k],20+k*sw,114,sw,26,17,muted,"Medium"));}
+   slots.Add(new Slot{Card=card,Name=st.Name,Action="",Description=st.Dist+" m · "+st.Mech+" mécaniques · "+st.Ebike+" électriques · "+st.Docks+" places",Row=i,X=x,Y=y,W=cw,H=ch});
   }
-  if(n==0)Text(mediaLoaded?"Rien à reprendre sur Plex pour le moment.":"Chargement de Plex…",80,300,1200,50,28,muted,"Medium");
+  // plan on a street map: Bel-Air metro in the middle, rings at 200 and 400 m, Lime bikes, numbered Vélib' stations
+  int mw=bikeMapW,mh=bikeMapH,cx=mw/2,cy=mh/2,R=bikeMapR;
+  var map=Panel(bikeMapX,bikeMapY,mw,mh,dark?new Color(.10f,.13f,.18f,1):new Color(.90f,.92f,.94f,1),26);map.ClippingMode=ClippingModeType.ClipChildren;
+  if(basemapKey==BasemapKey())foreach(var t in basemapTiles)map.Add(new ImageView{ResourceUrl=t.Item1,Position2D=new Position2D(cx+t.Item2,cy+t.Item3),Size2D=new Size2D(basemapSize,basemapSize),DesiredWidth=basemapSize,DesiredHeight=basemapSize});
+  if(dark&&basemapTiles.Count>0)map.Add(new View{Size2D=new Size2D(mw,mh),BackgroundColor=new Color(.05f,.07f,.11f,.58f)});
+  var ringC=dark?new Color(1,1,1,.55f):new Color(.10f,.14f,.22f,.55f);
+  foreach(int rr in new[]{R,R/2}){map.Add(new View{Position2D=new Position2D(cx-rr,cy-rr),Size2D=new Size2D(rr*2,rr*2),CornerRadius=new Vector4(rr,rr,rr,rr),BackgroundColor=new Color(.18f,.50f,.93f,rr==R?.05f:.06f),BorderlineWidth=2,BorderlineColor=ringC});
+   var rl=Label(rr==R?"400 m":"200 m",cx-40,cy-rr-26,80,24,15,ringC,"Semibold");rl.HorizontalAlignment=HorizontalAlignment.Center;map.Add(rl);}
+  var limeC=new Color(.20f,.80f,.30f,1);
+  foreach(var q in limePts){int px=cx+q[0]*R/400,py=cy-q[1]*R/400;map.Add(new View{Position2D=new Position2D(px-8,py-8),Size2D=new Size2D(16,16),CornerRadius=new Vector4(8,8,8,8),BackgroundColor=limeC,BorderlineWidth=2,BorderlineColor=white});}
+  for(int i=0;i<velib.Count&&i<4;i++){var st=velib[i];int px=cx+st.Dx*R/400,py=cy-st.Dy*R/400;
+   var pin=new View{Position2D=new Position2D(px-15,py-15),Size2D=new Size2D(30,30),CornerRadius=new Vector4(15,15,15,15),BackgroundColor=white,BorderlineWidth=3.5f,BorderlineColor=eC};map.Add(pin);
+   var pl=Label((i+1).ToString(),0,0,30,30,16,pinInk,"Semibold");pl.HorizontalAlignment=HorizontalAlignment.Center;pin.Add(pl);}
+  int mx6=cx+metroDx*R/400,my6=cy-metroDy*R/400;
+  map.Add(new View{Position2D=new Position2D(mx6-13,my6-13),Size2D=new Size2D(26,26),CornerRadius=new Vector4(13,13,13,13),BackgroundColor=HexColor("#83C491"),BorderlineWidth=2.5f,BorderlineColor=white});
+  var six=Label("6",mx6-13,my6-13,26,26,15,TileTitleColor("#83C491"),"Semibold");six.HorizontalAlignment=HorizontalAlignment.Center;map.Add(six);
+  var me=new View{Position2D=new Position2D(cx-15,cy-15),Size2D=new Size2D(30,30),CornerRadius=new Vector4(15,15,15,15),BackgroundColor=new Color(.94f,.33f,.31f,1),BorderlineWidth=3.5f,BorderlineColor=white};map.Add(me);
+  me.Add(new View{Position2D=new Position2D(10,10),Size2D=new Size2D(10,10),CornerRadius=new Vector4(5,5,5,5),BackgroundColor=white});
+  var targets=MapTargets();if(mapSel>=targets.Count)mapSel=targets.Count>0?0:-1;
+  if(mapSel>=0){
+   var tg=targets[mapSel];int px=cx+tg[0]*R/400,py=cy-tg[1]*R/400;
+   map.Add(new View{Position2D=new Position2D(px-24,py-24),Size2D=new Size2D(48,48),CornerRadius=new Vector4(24,24,24,24),BackgroundColor=new Color(0,0,0,0),BorderlineWidth=4,BorderlineColor=accent});
+   int dist=(int)Math.Round(Math.Sqrt(tg[0]*tg[0]+tg[1]*tg[1]));string title,line1,line2;
+   if(tg[2]==1){var st=velib[tg[3]];title=(tg[3]+1)+" · "+Clip(st.Name,24);line1=st.Mech+" mécaniques · "+st.Ebike+" électriques";line2=st.Docks+" places libres · à "+st.Dist+" m";}
+   else{var q=limePts[tg[3]];title=q[3]==1?"Trottinette Lime":q[3]==0?"Vélo électrique Lime":"Lime";line1=q[2]>=0?"Autonomie ≈ "+(q[2]/1000.0).ToString(q[2]<10000?"0.0":"0",frCulture)+" km":"Autonomie inconnue";line2="à "+dist+" m de chez vous";}
+   int bw=400,bh=118,bx=Math.Max(16,Math.Min(mw-bw-16,px-bw/2)),by=py-bh-34<150?py+34:py-bh-34;
+   var bub=new View{Position2D=new Position2D(bx,by),Size2D=new Size2D(bw,bh),CornerRadius=new Vector4(18,18,18,18),BackgroundColor=Sf(1,1,1,.96f),BorderlineWidth=3,BorderlineColor=accent};map.Add(bub);
+   bub.Add(Label(title,20,12,bw-40,34,23,ink,"Semibold"));bub.Add(Label(line1,20,48,bw-40,30,20,tg[2]==0?new Color(.15f,.62f,.25f,1):ink,"Semibold"));bub.Add(Label(line2,20,80,bw-40,28,17,muted,"Medium"));
+  }
+  // Lime summary and legend on frosted boxes
+  var box=new View{Position2D=new Position2D(20,20),Size2D=new Size2D(470,112),CornerRadius=new Vector4(18,18,18,18),BackgroundColor=Sf(1,1,1,.92f)};map.Add(box);
+  box.Add(Label("LIME · VÉLOS ÉLECTRIQUES",20,12,430,24,15,muted,"Semibold"));
+  box.Add(Label(limeCount<0?(mobLoaded?"Indisponible":"…"):limeCount+" à moins de 400 m",20,36,430,44,32,ink,"Display"));
+  box.Add(Label(limeNear>=0?"Le plus proche à "+limeNear+" m":"",20,78,430,26,17,muted,"Medium"));
+  var leg=new View{Position2D=new Position2D(20,mh-62),Size2D=new Size2D(760,42),CornerRadius=new Vector4(14,14,14,14),BackgroundColor=Sf(1,1,1,.92f)};map.Add(leg);
+  leg.Add(new View{Position2D=new Position2D(16,14),Size2D=new Size2D(14,14),CornerRadius=new Vector4(7,7,7,7),BackgroundColor=limeC});
+  leg.Add(Label("Lime",38,6,70,30,16,ink,"Medium"));
+  leg.Add(new View{Position2D=new Position2D(112,9),Size2D=new Size2D(24,24),CornerRadius=new Vector4(12,12,12,12),BackgroundColor=white,BorderlineWidth=3,BorderlineColor=eC});
+  leg.Add(Label("Station Vélib’ (n° de la tuile)",144,6,300,30,16,ink,"Medium"));
+  leg.Add(new View{Position2D=new Position2D(444,9),Size2D=new Size2D(24,24),CornerRadius=new Vector4(12,12,12,12),BackgroundColor=new Color(.94f,.33f,.31f,1),BorderlineWidth=3,BorderlineColor=white});
+  leg.Add(Label("Vous",476,6,80,30,16,ink,"Medium"));
+  leg.Add(new View{Position2D=new Position2D(556,9),Size2D=new Size2D(24,24),CornerRadius=new Vector4(12,12,12,12),BackgroundColor=HexColor("#83C491")});
+  leg.Add(Label("Métro Bel-Air",588,6,160,30,16,ink,"Medium"));
+  if(mapSel<0){var tip=new View{Position2D=new Position2D(mw-370,20),Size2D=new Size2D(350,42),CornerRadius=new Vector4(14,14,14,14),BackgroundColor=Sf(1,1,1,.92f)};map.Add(tip);var tl=Label("→ pour explorer la carte",0,6,350,30,17,ink,"Medium");tl.HorizontalAlignment=HorizontalAlignment.Center;tip.Add(tl);}
+  var attr=Label("© les contributeurs d’OpenStreetMap",mw-330,mh-36,310,26,14,dark?new Color(1,1,1,.6f):new Color(0,0,0,.55f),"Medium");attr.HorizontalAlignment=HorizontalAlignment.End;map.Add(attr);
+ }
+ void RequestBasemap()
+ {
+  IntPtr c;int r=app_control_create(out c);
+  if(r==0){try{
+   r=app_control_set_app_id(c,"com.samsung.tv.quicklaunch");
+   if(r==0)r=app_control_set_operation(c,"http://tizen.org/appcontrol/operation/default");
+   if(r==0)r=app_control_add_extra_data(c,"quiet_basemap_request",BasemapKey());
+   if(r==0)r=app_control_send_launch_request(c,IntPtr.Zero,IntPtr.Zero);
+  }finally{app_control_destroy(c);}}
+ }
+ void ReceiveBasemap(string json)
+ {
+  try{using(var doc=JsonDocument.Parse(json)){
+   var r=doc.RootElement;var list=new List<Tuple<string,int,int>>();
+   foreach(var t in r.GetProperty("Tiles").EnumerateArray())list.Add(Tuple.Create(t[0].GetString()??"",t[1].GetInt32(),t[2].GetInt32()));
+   if(list.Count>0){basemapTiles.Clear();basemapTiles.AddRange(list);basemapSize=(int)JNum(r,"Size");basemapKey=JStr(r,"Key");}
+  }}catch{}
+  if(page==10&&editing=="")RebuildKeepFocus();
+ }
+ void ReceiveMobility(string json)
+ {
+  try{using(var doc=JsonDocument.Parse(json)){
+   var r=doc.RootElement;var list=new List<BikeStation>();
+   foreach(var v in r.GetProperty("Velib").EnumerateArray())list.Add(new BikeStation{Name=JStr(v,"Name"),Dist=(int)JNum(v,"Dist"),Mech=(int)JNum(v,"Mech"),Ebike=(int)JNum(v,"Ebike"),Docks=(int)JNum(v,"Docks"),Dx=(int)JNum(v,"Dx"),Dy=(int)JNum(v,"Dy"),Open=!v.TryGetProperty("Open",out var o)||o.ValueKind!=JsonValueKind.False});
+   if(list.Count>0){velib.Clear();velib.AddRange(list);}
+   if(r.TryGetProperty("Lime",out var l)){limeCount=(int)JNum(l,"Count");limeNear=(int)JNum(l,"Near");limePts.Clear();if(l.TryGetProperty("Pts",out var pts))foreach(var q in pts.EnumerateArray()){var v=new int[4]{0,0,-1,0};for(int k=0;k<4&&k<q.GetArrayLength();k++)v[k]=q[k].GetInt32();limePts.Add(v);}}
+   mobAt=JStr(r,"At");metroDx=(int)JNum(r,"MetroDx");metroDy=(int)JNum(r,"MetroDy");mobLoaded=true;
+  }}catch{}
+  if(metroFoot!=null)metroFoot.Text=MetroFoot();
+  if(page==10&&editing=="")RebuildKeepFocus();
+ }
+ string MetroFoot()
+ {
+  if(velib.Count==0)return "OK · 2 prochains passages par direction";
+  var st=velib[0];int b=st.Mech+st.Ebike;
+  return "Vélib’ "+b+" à "+st.Dist+" m"+(limeCount>=0?" · Lime "+limeCount+" autour":"")+" · onglet Vélos";
+ }
+ void ReceiveRain(string json)
+ {
+  try{using(var doc=JsonDocument.Parse(json)){var list=new List<KeyValuePair<string,double>>();foreach(var q in doc.RootElement.EnumerateArray())list.Add(new KeyValuePair<string,double>(q[0].GetString()??"",q[1].GetDouble()));if(list.Count>0){rainSlots.Clear();rainSlots.AddRange(list);}}}catch{}
+  if(weatherRain!=null){weatherRain.Text=RainText();weatherRain.TextColor=RainColor();}
+ }
+ // Rain in the coming hour, from the 15-minute forecast (first step = the current quarter of an hour).
+ string RainText()
+ {
+  if(rainSlots.Count<5)return "OK · Prévisions du jour et sur 7 jours";
+  if(rainSlots[0].Value>=0.1){for(int i=1;i<rainSlots.Count;i++)if(rainSlots[i].Value<0.1)return "Il pleut · fin vers "+rainSlots[i].Key;return "Il pleut · pas d’éclaircie avant 2 h";}
+  for(int i=1;i<=4;i++)if(rainSlots[i].Value>=0.1)return "Pluie vers "+rainSlots[i].Key+" · "+rainSlots.Skip(i).Take(4).Sum(x=>x.Value).ToString("0.0",frCulture)+" mm";
+  return "Pas de pluie dans l’heure";
+ }
+ Color RainColor(){return rainSlots.Count>=5&&rainSlots.Take(5).Any(x=>x.Value>=0.1)?new Color(.18f,.50f,.93f,1):muted;}
+ // Keeps BelAir's helper listening for banners (Home Assistant messages, Félix, rain) whatever is on screen.
+ void SendWatch()
+ {
+  IntPtr c;int r=app_control_create(out c);
+  if(r==0){try{
+   r=app_control_set_app_id(c,"com.samsung.tv.quicklaunch");
+   if(r==0)r=app_control_set_operation(c,"http://tizen.org/appcontrol/operation/default");
+   if(r==0)r=app_control_add_extra_data(c,"quiet_watch","1");
+   if(r==0)r=app_control_send_launch_request(c,IntPtr.Zero,IntPtr.Zero);
+  }finally{app_control_destroy(c);}}
  }
  void PlayPlex(PlexItem item)
  {

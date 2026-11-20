@@ -26,9 +26,10 @@ Il est construit sur [Quiet Tizen](docs/quiet-tizen.md) (launcher natif NUI/C#, 
 |---|---|
 | **Accueil** | Tuile Apple TV avec ce qui est en lecture (affiche, progression, temps restant), Bourse CAC 40, « Le saviez-vous ? », métro 6 en temps réel, météo, températures intérieures, électricité, heure de Paris et de Buenos Aires, dock d'applis qui s'ouvrent directement sur l'Apple TV (dont **France 2 en direct**) |
 | **Applis** | Toutes les applis installées, avec leurs vraies icônes, triées par usage |
-| **Plex** | Ce qui joue sur l'Apple TV + « Continuer à regarder » et « À suivre » du serveur Plex, lancement direct dans Plex |
+| **Plex** | Ce qui joue sur l'Apple TV, « Reprendre » (Continuer à regarder, À suivre) et « Ajoutés récemment », lancement direct dans Plex |
 | **Maison** | Scènes, volets, lampes, lampes Govee avec scènes, mode cinéma automatique |
 | **Félix** | Robot aspirateur : carte en direct, état, entretien, nettoyage par pièce et programmes |
+| **Vélos** | Les 4 stations Vélib' les plus proches (vélos mécaniques, électriques, places) et les Lime disponibles sur un plan des rues centré sur le domicile ; les flèches parcourent le plan (autonomie de chaque Lime) |
 | **Énergie** | Consommation électrique quotidienne sur 30 jours (Linky / Octopus) |
 | **Système** | Infos TV : système, réseau, processeur, mémoire, stockage |
 | **Réglages** | Volume, luminosité et contraste, mode d'image, mode jeu, son, minuterie, réseau, thème, couleur, fond d'écran, brief du matin |
@@ -52,10 +53,18 @@ Tout passe par **Home Assistant** (local en priorité, accès distant en secours
   ![Panneau Govee](docs/screenshots/govee-panel.jpg)
   ![Catalogue de scènes Govee](docs/screenshots/govee-catalogue.jpg)
 
-- **Mode cinéma automatique** : quand Plex ou Netflix joue sur l'Apple TV (ou Plex sur la TV), les lumières s'éteignent et les volets se ferment ; à la pause, les lampes se rallument sans toucher aux volets.
+- **Mode cinéma automatique** : quand Plex ou Netflix joue sur l'Apple TV (ou Plex sur la TV), les lumières s'éteignent, le néon passe à 5 % et les volets se ferment ; à la pause, les lampes se rallument sans toucher aux volets, et à l'arrêt le néon retrouve son état d'avant le film.
+- **Lampes IKEA** : OK allume ou éteint, un appui long ouvre le réglage de luminosité.
 - **Félix**, le robot aspirateur : carte de l'appartement rafraîchie toutes les 8 s pendant le ménage, batterie, pièce en cours, entretien des brosses et filtres, **nettoyage sur mesure** (choix des pièces, aspirer / laver / les deux) et programmes enregistrés.
 
   ![Félix (carte floutée)](docs/screenshots/felix.jpg)
+
+## Notifications sur la TV
+
+Des popups s'affichent en haut à droite de l'écran **par-dessus n'importe quelle source**, Apple TV comprise, sans quitter le film : seules les touches OK et Retour sont réservées pendant qu'une popup est visible, OK la ferme.
+
+- **Depuis Home Assistant** : le script « BelAir OS · Message à la TV » (titre, message, icône ou image d'une entité, durée) émet l'événement `belair_notify` ; la TV, abonnée en direct, l'affiche en une seconde. Un tableau de bord « BelAir OS » permet d'écrire un message ou d'envoyer des messages rapides.
+- **Automatiques** : Félix a fini son ménage (avec sa carte) ou a besoin d'aide, pluie attendue dans l'heure.
 
 ## Divertissement
 
@@ -74,7 +83,7 @@ Tout passe par **Home Assistant** (local en priorité, accès distant en secours
 | ![Trafic](docs/screenshots/metro.jpg) **Information trafic** — passages en temps réel à Bel-Air dans les deux sens, état des 16 lignes de métro et 5 RER. | ![Bourse](docs/screenshots/bourse.jpg) **Bourse** — CAC 40, Euro Stoxx 50, S&P 500, QQQ, NVIDIA, AMD, Micron, SanDisk, Alphabet, Apple, or, cuivre, EUR/USD ; graphique Jour à Max. |
 | ![Énergie](docs/screenshots/energie.jpg) **Énergie** — 30 derniers jours, coût, moyenne, mois en cours. | ![Système](docs/screenshots/systeme.jpg) **Système** — santé de la TV en direct. |
 
-« Le saviez-vous ? » puise dans les anecdotes de la page d'accueil de Wikipédia (actuelles et archives), renouvelées chaque jour.
+La tuile météo annonce la **pluie dans l'heure** (prévision par quart d'heure). « Le saviez-vous ? » puise dans les anecdotes de la page d'accueil de Wikipédia (actuelles et archives), renouvelées chaque jour.
 
 ## Réglages et apparence
 
@@ -121,10 +130,11 @@ Ce dépôt ne contient ni jeton, ni adresse, ni identifiant d'appareil :
 
 - les fichiers propres à la maison (configuration Home Assistant, catalogues Govee avec adresses, captures brutes, sauvegardes) restent dans des chemins ignorés (`.local/`, `*.local.json`) ;
 - les logos d'éditeurs extraits de la TV ne sont pas inclus ;
-- les captures d'écran ci-dessus ont la carte, les prénoms et les adresses réseau floutés.
+- les captures d'écran ci-dessus ont la carte, les prénoms et les adresses réseau floutés ;
+- la position du domicile (centre du plan Vélos) est lue au démarrage dans Home Assistant (`zone.home`) et n'apparaît nulle part dans le code.
 
 ## Crédits
 
 - [Quiet Tizen / Free My TV](docs/quiet-tizen.md) pour le launcher de base, les outils et la méthode — voir [NOTICE.md](NOTICE.md) et [docs/provenance.md](docs/provenance.md).
-- Données : Home Assistant, Open-Meteo et MET Norway, Île-de-France Mobilités, franceinfo, Yahoo Finance, Wikipédia, bibliothèque de scènes Govee.
+- Données : Home Assistant, Open-Meteo et MET Norway, Île-de-France Mobilités, Vélib' Métropole et Lime (flux GBFS publics), fonds de carte © les contributeurs d'OpenStreetMap, franceinfo, Yahoo Finance, Wikipédia, bibliothèque de scènes Govee.
 - Licence : voir [LICENSE](LICENSE).
