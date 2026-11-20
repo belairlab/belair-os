@@ -210,7 +210,11 @@ public sealed class QuickLaunch : NUIApplication {
  static List<string[]> velibNear;static DateTime velibInfoAt=DateTime.MinValue;
  // The plan is centred on home: Home Assistant's zone.home (never stored in the code); Bel-Air metro until it is read.
  static double ctrLat=belAirLat,ctrLon=belAirLon;static bool ctrLoaded;
+ // Demo mode for screenshots (/tmp/quiet-demo): plans centred on the Élysée palace, fictional devices on Localiser.
+ static bool Demo(){try{return File.Exists("/tmp/quiet-demo");}catch{return false;}}static bool demoCenter;
  static void LoadCenter(){
+  bool demo=Demo();
+  if(demo!=demoCenter){demoCenter=demo;velibNear=null;ctrLoaded=false;Tlog("centre "+(demo?"demo":"home"));if(demo){ctrLat=48.87042;ctrLon=2.31674;ctrLoaded=true;return;}}
   if(ctrLoaded)return;
   try{string json=HaGet("/api/states/zone.home");if(json==null)return;using(var doc=JsonDocument.Parse(json)){var a=doc.RootElement.GetProperty("attributes");
    if(a.TryGetProperty("latitude",out var la)&&la.ValueKind==JsonValueKind.Number&&a.TryGetProperty("longitude",out var lo)&&lo.ValueKind==JsonValueKind.Number){ctrLat=la.GetDouble();ctrLon=lo.GetDouble();ctrLoaded=true;velibNear=null;}}}catch{}
@@ -258,6 +262,14 @@ public sealed class QuickLaunch : NUIApplication {
  static readonly System.Collections.Concurrent.ConcurrentDictionary<string,double[]> findPos=new System.Collections.Concurrent.ConcurrentDictionary<string,double[]>();
  static string FetchFindJson(){
   LoadCenter();
+  if(Demo()){
+   var now=DateTime.UtcNow;string Iso(int min)=>now.AddMinutes(-min).ToString("yyyy-MM-ddTHH:mm:ss+00:00");
+   var demo=new[]{new{n="iPhone",m="iPhone 17 Pro",st="home",b=82,bs="NotCharging",dx=8,dy=-5,acc=12,t=1},new{n="MacBook Air",m="MacBook Air (13-inch, M5)",st="home",b=64,bs="Charging",dx=-14,dy=9,acc=35,t=4},
+    new{n="AirPods Pro",m="AirPods Pro (2nd generation)",st="not_home",b=-1,bs="",dx=430,dy=-260,acc=18,t=9},new{n="iPhone (famille)",m="iPhone 17",st="not_home",b=41,bs="NotCharging",dx=-820,dy=610,acc=9,t=2},new{n="iPad",m="iPad Air",st="not_home",b=17,bs="NotCharging",dx=1900,dy=-1300,acc=25,t=26}};
+   var dms=new MemoryStream();using(var w=new Utf8JsonWriter(dms)){w.WriteStartArray();int i=0;foreach(var d in demo){i++;w.WriteStartObject();w.WriteString("id","device_tracker.demo_"+i);w.WriteString("name",d.n);w.WriteString("bs",d.bs);w.WriteString("model",d.m);w.WriteString("state",d.st);w.WriteString("zone","");w.WriteString("sound","button.demo_play_sound");w.WriteString("located",Iso(d.t));w.WriteNumber("bat",d.b);w.WriteNumber("acc",d.acc);w.WriteNumber("dist",(long)Math.Sqrt(d.dx*d.dx+d.dy*d.dy));w.WriteNumber("dx",d.dx);w.WriteNumber("dy",d.dy);w.WriteEndObject();
+    findPos["device_tracker.demo_"+i]=new[]{ctrLat+d.dy/111320.0,ctrLon+d.dx/(111320.0*Math.Cos(ctrLat*Math.PI/180))};}w.WriteEndArray();}
+   return System.Text.Encoding.UTF8.GetString(dms.ToArray());
+  }
   string raw=HaPostJson("/api/template",JsonSerializer.Serialize(new{template=findTemplate}));if(raw==null)return null;
   var ms=new MemoryStream();
   try{using(var doc=JsonDocument.Parse(raw))using(var w=new Utf8JsonWriter(ms)){
@@ -277,16 +289,19 @@ public sealed class QuickLaunch : NUIApplication {
   }}catch{return null;}
   return System.Text.Encoding.UTF8.GetString(ms.ToArray());
  }
- // ---- street map behind the Vélos plan: OpenStreetMap tiles, fetched once and kept (about 25 tiles) ----
+ // ---- street map behind the plans: IGN's Plan IGN (open licence, no key; clean, Apple Plans-like), OpenStreetMap
+ // when a tile is missing. Fetched once and kept (a few dozen tiles per view). ----
  // request "dark|width|height|radius": the plan is width×height display pixels, 400 m = radius pixels, centred on Bel-Air.
  static string FetchBasemapJson(string request){
   var p=request.Split('|');if(p.Length<4)return null;
-  foreach(var old in new[]{"basemap-dark_all","basemap-light_all"})try{string od=System.IO.Path.Combine(SharedDir(""),old);if(Directory.Exists(od))Directory.Delete(od,true);}catch{}
+  foreach(var old in new[]{"basemap-dark_all","basemap-light_all","basemap-osm"})try{string od=System.IO.Path.Combine(SharedDir(""),old);if(Directory.Exists(od))Directory.Delete(od,true);}catch{}
   int W=int.Parse(p[1]),H=int.Parse(p[2]),R=int.Parse(p[3]);int z=16;
   // zoom level whose tiles are shown at or below their own size (sharp): never stretched more than 10 %
-  while(z<18&&R/400.0*156543.03392*Math.Cos((p.Length>4&&findPos.TryGetValue(p[4],out var zp)?zp[0]:ctrLat)*Math.PI/180)/Math.Pow(2,z)>1.1)z++;
-  LoadCenter();
-  double cLat=ctrLat,cLon=ctrLon;
+  double zlat=(p.Length>4&&findPos.TryGetValue(p[4],out var zp)?zp[0]:ctrLat)*Math.PI/180;
+  Func<int,double> scale=zz=>R/400.0*156543.03392*Math.Cos(zlat)/Math.Pow(2,zz);
+  while(z<19&&scale(z)>1.1)z++;
+  while(z>10&&scale(z)<0.55)z--;
+  LoadCenter();double cLat=ctrLat,cLon=ctrLon;
   if(p.Length>4&&p[4].StartsWith("device_tracker.")){if(!findPos.ContainsKey(p[4]))FetchFindJson();if(findPos.TryGetValue(p[4],out var fp)){cLat=fp[0];cLon=fp[1];}else return null;}
   double latr=cLat*Math.PI/180,world=256*Math.Pow(2,z);
   double cx=(cLon+180)/360*world,cy=(1-Math.Log(Math.Tan(latr)+1/Math.Cos(latr))/Math.PI)/2*world;
@@ -294,14 +309,15 @@ public sealed class QuickLaunch : NUIApplication {
   double hw=W/2.0/sc,hh=H/2.0/sc;
   int tx0=(int)Math.Floor((cx-hw)/256),tx1=(int)Math.Floor((cx+hw)/256),ty0=(int)Math.Floor((cy-hh)/256),ty1=(int)Math.Floor((cy+hh)/256);
   if((tx1-tx0+1)*(ty1-ty0+1)>80)return null;
-  string dir=SharedDir("basemap-osm");
+  string dir=SharedDir("basemap-ign");
   var jobs=new List<Task<string[]>>();
   for(int tx=tx0;tx<=tx1;tx++)for(int ty=ty0;ty<=ty1;ty++){int x=tx,y=ty;
    jobs.Add(Task.Run(()=>{
     string f=System.IO.Path.Combine(dir,z+"_"+x+"_"+y+".png");
     if(!File.Exists(f)){
      if(webClient==null)WebGet("about:blank");
-     try{var bytes=webClient.GetByteArrayAsync("https://tile.openstreetmap.org/"+z+"/"+x+"/"+y+".png").GetAwaiter().GetResult();if(bytes.Length>100&&bytes[0]==0x89){File.WriteAllBytes(f+".part",bytes);File.Move(f+".part",f,true);}}catch{}
+     foreach(var url in new[]{"https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX="+z+"&TILEROW="+y+"&TILECOL="+x+"&FORMAT=image/png","https://tile.openstreetmap.org/"+z+"/"+x+"/"+y+".png"})
+     try{if(File.Exists(f))break;var bytes=webClient.GetByteArrayAsync(url).GetAwaiter().GetResult();if(bytes.Length>100&&bytes[0]==0x89){File.WriteAllBytes(f+".part",bytes);File.Move(f+".part",f,true);}}catch{}
     }
     return File.Exists(f)?new[]{f,((int)Math.Round((x*256-cx)*sc)).ToString(),((int)Math.Round((y*256-cy)*sc)).ToString()}:null;
    }));}
@@ -328,7 +344,14 @@ public sealed class QuickLaunch : NUIApplication {
  static readonly DateTime procStart=Process.GetCurrentProcess().StartTime;
  static void Tlog(string m){try{var f="/tmp/quiet-ha-timing.txt";if(File.Exists(f)&&new FileInfo(f).Length>40000)File.Delete(f);File.AppendAllText(f,DateTime.Now.ToString("HH:mm:ss.fff")+" "+m+"\n");}catch{}}
  protected override void OnAppControlReceived(AppControlReceivedEventArgs e){
-  base.OnAppControlReceived(e);Tlog("recv up="+(int)(DateTime.Now-procStart).TotalMilliseconds+"ms");string kind;bool preload=e.ReceivedAppControl.ExtraData.TryGet("launch_type",out kind)&&kind=="preload";
+  base.OnAppControlReceived(e);Tlog("recv up="+(int)(DateTime.Now-procStart).TotalMilliseconds+"ms");
+  // Commands that act on the home (Home Assistant services, Apple TV, Plex, banners) are accepted from BelAir's Home only.
+  string caller="";try{caller=e.ReceivedAppControl.CallerApplicationId??"";}catch{}
+  if(caller!="com.samsung.tv.bixby-promotion"){
+   foreach(var key in new[]{"quiet_ha_calls","quiet_ha_calls_silent","quiet_ha_domain","quiet_ha_batch","quiet_channel","quiet_plex_play","quiet_govee_scene","quiet_toast"}){
+    string v;if(e.ReceivedAppControl.ExtraData.TryGet(key,out v)){Tlog("refused "+key+" from "+(caller==""?"?":caller));if(idleTimer==null&&!watchHeld)Exit();return;}
+   }
+  }string kind;bool preload=e.ReceivedAppControl.ExtraData.TryGet("launch_type",out kind)&&kind=="preload";
   string toast;if(e.ReceivedAppControl.ExtraData.TryGet("quiet_toast",out toast)&&!string.IsNullOrEmpty(toast)){string mode;if(!e.ReceivedAppControl.ExtraData.TryGet("quiet_toast_mode",out mode))mode="active";if(mode=="window"){string tt;if(!e.ReceivedAppControl.ExtraData.TryGet("quiet_toast_title",out tt))tt="BelAir OS";ShowBanner(tt,toast);return;}ToastProbe(toast,mode);if(idleTimer==null)Exit();return;}
   string watch;if(e.ReceivedAppControl.ExtraData.TryGet("quiet_watch",out watch)){if(watch=="1")StartWatch();else StopWatch();if(idleTimer==null&&!watchHeld)Exit();return;}
   string articleUrl;
@@ -403,7 +426,8 @@ public sealed class QuickLaunch : NUIApplication {
    Task.Run(()=>{try{
     bool ok=true;
     if(wa||bt!=null)lock(actLock){
-     if(wa){
+     if(wa&&!HaActionAllowed(d,sv,en)){ok=false;Tlog("refused "+d+"."+sv);}
+     else if(wa){
       string body=ps!=null?("{\"entity_id\":\""+en+"\",\"position\":"+ps+"}"):("{\"entity_id\":\""+en+"\"}");
       ok=HaPost("/api/services/"+d+"/"+sv,LocalLight(d+"/"+sv,body));
      }
@@ -468,7 +492,8 @@ public sealed class QuickLaunch : NUIApplication {
   lock(clientLock){
   if(haClient!=null)return haClient;
   var h=new HttpClientHandler();
-  h.ServerCertificateCustomValidationCallback=(m,c,ch,er)=>true; // owner-authorised: local HA on the LAN uses a hostname-mismatched/self-signed certificate
+  // Only the local HA (private address, self-signed certificate) may skip validation; the remote URL must present a valid certificate.
+  h.ServerCertificateCustomValidationCallback=(m,c,ch,er)=>er==System.Net.Security.SslPolicyErrors.None||m.RequestUri!=null&&IsPrivateHost(m.RequestUri.Host);
   var cl=new HttpClient(h);cl.Timeout=TimeSpan.FromSeconds(15);
   cl.DefaultRequestHeaders.Authorization=new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer",haToken);
   haClient=cl;return cl;
@@ -573,11 +598,25 @@ public sealed class QuickLaunch : NUIApplication {
   using(var u=new System.Net.Sockets.UdpClient()){foreach(int wait in new[]{0,400,600}){System.Threading.Thread.Sleep(wait);u.Send(msg,msg.Length,new IPEndPoint(addr,4003));}}
   try{File.WriteAllText("/tmp/quiet-govee.txt",DateTime.Now.ToString("HH:mm:ss")+" "+p[0]+" "+ip+" "+code+" frames="+frames.Count+(goveeIp.ContainsKey(p[0])?" (scan)":" (fallback)")+"\n");}catch{}
  }
+ // Services the Home screen uses; anything else is refused even from Home.
+ static bool HaActionAllowed(string domain,string service,string entity){
+  if(string.IsNullOrEmpty(entity)||!entity.StartsWith(domain+"."))return false;
+  switch(domain){
+   case "light":case "switch":return service=="turn_on"||service=="turn_off"||service=="toggle";
+   case "cover":return service=="set_cover_position"||service=="open_cover"||service=="close_cover"||service=="stop_cover";
+   case "scene":return service=="turn_on";
+   case "vacuum":return service=="start"||service=="pause"||service=="return_to_base"||service=="stop"||service=="locate";
+   case "automation":return service=="turn_on"||service=="turn_off";
+   case "button":return service=="press";
+   default:return false;
+  }
+ }
  static bool HaBatch(string json){
   bool all=true;
   try{using(var doc=JsonDocument.Parse(json)){foreach(var a in doc.RootElement.EnumerateArray()){
    string d=a.GetProperty("d").GetString(),s=a.GetProperty("s").GetString(),ent=a.GetProperty("e").GetString();
    if(d==null||s==null||ent==null)continue;
+   if(!ent.Split(',').All(x=>HaActionAllowed(d,s,x))){all=false;continue;}
    string eid;
    if(ent.IndexOf(',')>=0){var parts=ent.Split(',');eid="[";for(int i=0;i<parts.Length;i++)eid+=(i>0?",":"")+"\""+parts[i]+"\"";eid+="]";}
    else eid="\""+ent+"\"";
@@ -1084,6 +1123,9 @@ public sealed class QuickLaunch : NUIApplication {
  }
  // ---- media: what plays on the Apple TV, plus Plex "continue watching" and "on deck" read through Home Assistant ----
  const string plexClient="media_player.plex_plex_for_samsung_tv_2025";
+ // Home Assistant can only read the Plex library through a Plex player it currently sees: the Apple TV's, else the TV's.
+ static readonly string[] plexBrowsers={"media_player.plex_plex_for_apple_tv_apple_tv",plexClient};static string browseClient=plexClient;
+ static bool PickPlexBrowser(){foreach(var e in plexBrowsers){string js=HaGet("/api/states/"+e);if(js==null)continue;try{using(var d=JsonDocument.Parse(js)){string st=Str(d.RootElement,"state");if(st!=""&&st!="unavailable"){browseClient=e;return true;}}}catch{}}return false;}
  static string Str(JsonElement el,string name){return el.ValueKind==JsonValueKind.Object&&el.TryGetProperty(name,out var v)&&v.ValueKind==JsonValueKind.String?v.GetString()??"":"";}
  static double Num(JsonElement el,string name){return el.ValueKind==JsonValueKind.Object&&el.TryGetProperty(name,out var v)&&v.ValueKind==JsonValueKind.Number?v.GetDouble():0;}
  static byte[] HaGetBytes(string path){
@@ -1105,8 +1147,8 @@ public sealed class QuickLaunch : NUIApplication {
   }catch{return "";}
  }
  static string BrowseMedia(System.Net.WebSockets.ClientWebSocket ws,System.Threading.CancellationToken ct,int id,string type,string contentId){
-  string request=type==null?JsonSerializer.Serialize(new{id,type="media_player/browse_media",entity_id=plexClient})
-   :JsonSerializer.Serialize(new{id,type="media_player/browse_media",entity_id=plexClient,media_content_type=type,media_content_id=contentId});
+  string request=type==null?JsonSerializer.Serialize(new{id,type="media_player/browse_media",entity_id=browseClient})
+   :JsonSerializer.Serialize(new{id,type="media_player/browse_media",entity_id=browseClient,media_content_type=type,media_content_id=contentId});
   WsSend(ws,request,ct);
   string reply=WsRecv(ws,ct);
   return reply.Contains("\"success\":true")?reply:null;
@@ -1132,7 +1174,7 @@ public sealed class QuickLaunch : NUIApplication {
   var now=NowPlaying();
   List<Dictionary<string,string>> items=null;
   if(hubs){
-   var raw=WithHaSocket((ws,ct)=>{
+   var raw=!PickPlexBrowser()?null:WithHaSocket((ws,ct)=>{
     string rootReply=BrowseMedia(ws,ct,1,null,null);if(rootReply==null)return null;
     string root;using(var doc=JsonDocument.Parse(rootReply))root=Str(doc.RootElement.GetProperty("result"),"media_content_id");
     if(root=="")return null;

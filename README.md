@@ -29,7 +29,7 @@ Il est construit sur [Quiet Tizen](docs/quiet-tizen.md) (launcher natif NUI/C#, 
 | **Plex** | Ce qui joue sur l'Apple TV, « Reprendre » (Continuer à regarder, À suivre) et « Ajoutés récemment », lancement direct dans Plex |
 | **Maison** | Scènes, volets, lampes, lampes Govee avec scènes, mode cinéma automatique |
 | **Félix** | Robot aspirateur : carte en direct, état, entretien, nettoyage par pièce et programmes |
-| **Vélos** | Les 4 stations Vélib' les plus proches (vélos mécaniques, électriques, places) et les Lime disponibles sur un plan des rues centré sur le domicile ; les flèches parcourent le plan (autonomie de chaque Lime) |
+| **Vélos** | Les 4 stations Vélib' les plus proches (vélos mécaniques, électriques, places) et les Lime disponibles sur un plan des rues (Plan IGN) centré sur le domicile ; les flèches parcourent le plan (autonomie de chaque Lime) |
 | **Localiser** | Protégée par un code PIN : les appareils et objets de Localiser (intégration iCloud de Home Assistant) avec lieu, distance, batterie et dernière localisation, sur un plan des rues ; OK centre la carte sur un appareil, un appui long le fait sonner après confirmation |
 | **Énergie** | Consommation électrique quotidienne sur 30 jours (Linky / Octopus) |
 | **Système** | Infos TV : système, réseau, processeur, mémoire, stockage |
@@ -62,15 +62,33 @@ Tout passe par **Home Assistant** (local en priorité, accès distant en secours
 
 ## Notifications sur la TV
 
-Des popups s'affichent en haut à droite de l'écran **par-dessus n'importe quelle source**, Apple TV comprise, sans quitter le film : seules les touches OK et Retour sont réservées pendant qu'une popup est visible, OK la ferme.
+Des popups s'affichent en haut à droite de l'écran **par-dessus n'importe quelle source**, Apple TV comprise, sans quitter le film : seules les touches OK et Retour sont réservées pendant qu'une popup est visible. OK la ferme, tout comme un clic central sur la télécommande de l'Apple TV (la lecture reste comme elle était).
+
+![Popup sur la TV](docs/screenshots/popup.jpg)
 
 - **Depuis Home Assistant** : le script « BelAir OS · Message à la TV » (titre, message, icône ou image d'une entité, durée) émet l'événement `belair_notify` ; la TV, abonnée en direct, l'affiche en une seconde. Un tableau de bord « BelAir OS » permet d'écrire un message ou d'envoyer des messages rapides.
 - **Automatiques** : Félix a fini son ménage (avec sa carte) ou a besoin d'aide, pluie attendue dans l'heure.
 
+## Vélos et Localiser
+
+![Vélos](docs/screenshots/velos.jpg)
+
+- **Vélos** : les 4 stations Vélib' les plus proches, numérotées comme sur le plan, et les vélos Lime disponibles à moins de 400 m ; → entre dans le plan pour voir l'autonomie de chaque Lime.
+
+![Localiser](docs/screenshots/localiser.jpg)
+
+- **Localiser** : les appareils de Localiser (intégration iCloud de Home Assistant) avec batterie et dernière localisation. OK centre la carte sur un appareil, CH +/− ou les boutons + et − règlent le zoom, un appui long propose de le faire sonner (Annuler sélectionné par défaut).
+
+| | |
+|---|---|
+| ![Appareil centré](docs/screenshots/localiser-appareil.jpg) | ![Code PIN](docs/screenshots/localiser-code.jpg) |
+
+La page est protégée par un code à 4 chiffres choisi sur la TV (stocké haché sur la TV seulement) ; le clavier part toujours du 1 et n'affiche aucune sélection, pour que personne ne puisse lire le code.
+
 ## Divertissement
 
 - **Apple TV** : la tuile d'accueil montre en direct ce qui est en lecture (titre, appli, illustration dans l'écran dessiné, progression).
-- **Plex** : rangée « En cours et à reprendre » avec affiches ; OK ouvre Plex et lance le titre choisi.
+- **Plex** : « Reprendre » (Continuer à regarder, À suivre) et « Ajoutés récemment » avec affiches, lus via le lecteur Plex de l'Apple TV ou de la TV ; OK ouvre Plex et lance le titre choisi.
 
   ![Plex](docs/screenshots/plex.jpg)
 

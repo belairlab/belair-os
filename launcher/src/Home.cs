@@ -253,6 +253,7 @@ public sealed class QuietHome : NUIApplication
   else if(requested!=null&&requested.StartsWith("show:light:")){page=5;area=1;selected=0;lightId=requested.Substring(11);lightOpen=true;lightRow=0;lightCol=0;BuildPage();}
   else if(requested!=null&&requested.StartsWith("show:catalog:")){page=5;area=1;selected=0;lightId=requested.Substring(13);lightOpen=true;catalogOpen=true;catIndex=0;catSel=0;catPage=0;catOnTabs=true;BuildPage();}
   else if(requested!=null&&requested.StartsWith("show:cover:")){page=5;area=1;selected=0;coverPopupEntity=requested.Substring(11);coverPopupSel=2;coverPopupOpen=true;BuildPage();}
+  else if(requested!=null&&requested.StartsWith("show:findfocus:")&&Demo()){page=11;area=1;findFocus="device_tracker.demo_"+requested.Substring(15);BuildPage();}
   else if(requested=="show:close"){CloseBrief(false);pictureOpen=false;cleanOpen=false;BuildPage();}
   else if(requested=="show:picture"){page=2;area=1;selected=3;BuildPage();OpenPicture();}
   else if(requested=="show:clean"){page=9;area=1;selected=0;cleanOpen=true;cleanRow=0;cleanCol=0;BuildPage();}
@@ -671,7 +672,7 @@ public sealed class QuietHome : NUIApplication
   if(page==0&&factDetailOpen)BuildFactDetail();
   selected=Math.Max(0,Math.Min(selected,slots.Count-1));UpdateFocus(false);
   if(page==10&&mapSel>=0)ApplyMapMode();
-  if(page!=11&&findUnlocked){findUnlocked=false;pinEntry="";findFocus="";}
+  if(page!=11&&findUnlocked){findUnlocked=false;pinEntry="";findFocus="";findZoom=-1;}
   buildMilliseconds=stopwatch.ElapsedMilliseconds;WriteState("page_ready");
  }
  void BuildForecast()
@@ -2092,7 +2093,8 @@ public sealed class QuietHome : NUIApplication
   for(int i=0;i<tabs.Length;i++){bool act=tabPage[i]==page;tabs[i].TextColor=act?ink:muted;tabs[i].FontFamily="Quiet Inter "+(act?"Semibold":"Medium");tabs[i].BackgroundColor=area==0&&act?(dark?new Color(1,1,1,.14f):new Color(1,1,1,.7f)):new Color(0,0,0,0);tabs[i].CornerRadius=new Vector4(34,34,34,34);}
   for(int i=0;i<slots.Count;i++){
    var s=slots[i];bool newsControl=s.Action.StartsWith("news_category:")||s.Action.StartsWith("news_item:")||s.Action.StartsWith("quote:");
-   bool f=factDetailOpen?false:page==3?area==3&&selected==i:newsMenuOpen?newsControl&&area!=9&&!quoteDetailOpen&&selected==i:area!=0&&area!=9&&selected==i;
+   // PIN pad: focus is shown only on its starting key (1), so you know where you are but nobody can follow the code.
+   bool f=factDetailOpen?false:page==11&&!findUnlocked?selected==i&&slots[i].Action=="pin:1":page==3?area==3&&selected==i:newsMenuOpen?newsControl&&area!=9&&!quoteDetailOpen&&selected==i:area!=0&&area!=9&&selected==i;
    float scale=f?(page==8||page==9||page==10||page==11?(s.H>120?1.06f:1.05f):page==2&&s.Row==2?1.04f:page==5||page==4?1.05f:s.Action=="news"?1.035f:newsControl?1.015f:page==1&&s.Row>=0?1.055f:page==2&&s.Row>=0?1.035f:s.Row==0?1.05f:s.Row==1?(page==0?1.14f:1.03f):s.Row==-2?1.025f:s.Row==-1?1.18f:1):1;
    s.Card.BorderlineWidth=page==8||page==9||page==10||page==11||page==2&&s.Row==2?(f?4:0):page==5||page==4?(f?3:0):s.Action=="news"?(f?3:0):newsControl?(f?4:0):s.Row==1?(f?3:0):page==1&&s.Row>=0?(f?4:1):s.Row==-2?(f?4:0):s.Row==-1?(f?4:0):s.Row==0?1:0;
    s.Card.BorderlineColor=(page==1||page==4||page==5||page==8||page==9||page==10||page==11||page==2&&s.Row==2||s.Row==-1||newsControl)&&f?accent:new Color(1,1,1,f?.8f:.28f);
@@ -2113,7 +2115,7 @@ public sealed class QuietHome : NUIApplication
   }
   if(focusAnimation!=null)focusAnimation.Play();
   if(clock!=null)clock.Opacity=page==3||page==4||page!=0&&area==3?0:1;toolbarHint.Text=area==3?slots[selected].Name:"";
-  detail.Text=quoteDetailOpen?"←/→ échelle · ↑/↓ action précédente ou suivante · Retour pour fermer":area==11?"←/→ choisir · OK graphique du jour · ↑ rubriques · ↓ articles":page==3&&area==5?"←/→ heures · ↓ jours · OK détail · ↑ menu":page==3&&area==6?"←/→ jours · ↑ heures · OK détail":area==7?"←/→ rubrique · ↓ titres · OK pour afficher":area==8?"↑ rubriques · ←/→ changer · OK pour le détail":area==4&&selected==metroSlotIndex?"OK pour voir les 2 prochains métros par direction":area==4?"OK pour les prévisions du jour et sur 7 jours":(page==1||page==8||page==9||page==10||page==11)&&area==1&&slots[selected].Row>=0?slots[selected].Name+" · "+slots[selected].Description:area==0&&page==0?"↑ Actualités · gauche/droite pour changer d’écran":area==0?"":area==2?slots[selected].Name:"";
+  detail.Text=quoteDetailOpen?"←/→ échelle · ↑/↓ action précédente ou suivante · Retour pour fermer":area==11?"←/→ choisir · OK graphique du jour · ↑ rubriques · ↓ articles":page==3&&area==5?"←/→ heures · ↓ jours · OK détail · ↑ menu":page==3&&area==6?"←/→ jours · ↑ heures · OK détail":area==7?"←/→ rubrique · ↓ titres · OK pour afficher":area==8?"↑ rubriques · ←/→ changer · OK pour le détail":area==4&&selected==metroSlotIndex?"OK pour voir les 2 prochains métros par direction":area==4?"OK pour les prévisions du jour et sur 7 jours":(page==1||page==8||page==9||page==10||page==11)&&area==1&&slots[selected].Row>=0?(slots[selected].Name!=""?slots[selected].Name+" · ":"")+slots[selected].Description:area==0&&page==0?"↑ Actualités · gauche/droite pour changer d’écran":area==0?"":area==2?slots[selected].Name:"";
   if(page==2){
    slots[0].Label.Text=currentVolume<0?"Indisponible":currentVolume.ToString();
    slots[1].Label.Text=SettingName("brightness");
@@ -2164,7 +2166,8 @@ public sealed class QuietHome : NUIApplication
    }
    if(page==11&&!findUnlocked&&k.Length==1&&k[0]>='0'&&k[0]<='9'){PinKey(k);return;}
    if(page==11&&ringAsk!=""){HandleRingKey(k);return;}
-   if(page==11&&findUnlocked&&findFocus!=""&&(k=="XF86Back"||k=="Back"||k=="Escape")){findFocus="";RebuildKeepFocus();return;}
+   if(page==11&&findUnlocked&&(k=="XF86RaiseChannel"||k=="XF86LowerChannel"||k=="KP_Add"||k=="KP_Subtract"||k=="plus"||k=="minus")){FindZoom(k=="XF86RaiseChannel"||k=="KP_Add"||k=="plus"?1:-1);return;}
+   if(page==11&&findUnlocked&&findFocus!=""&&(k=="XF86Back"||k=="Back"||k=="Escape")){findFocus="";findZoom=-1;RebuildKeepFocus();return;}
    if(page==10&&mapSel>=0){HandleMapKey(k);return;}
    if(page==10&&area==1&&k=="Right"&&velib.Count+limePts.Count>0){EnterMap();return;}
    if((page==8||page==9||page==10||page==11)&&HandleGridKey(k,page==8?"plex_back":"felix_back"))return;
@@ -2325,6 +2328,7 @@ public sealed class QuietHome : NUIApplication
   if(a.StartsWith("channel:")){StartChannel(a.Substring(8));return;}
   if(a.StartsWith("atv:")){LaunchOnAppleTv(a);return;}
   if(a.StartsWith("pin:")){PinKey(a.Substring(4));return;}
+  if(a.StartsWith("findzoom:")){FindZoom(a.EndsWith("in")?1:-1);return;}
   if(a.StartsWith("find:")){
    string fid=a.Substring(5);
    if(!keyUpSeen){FocusFind(fid);return;}
@@ -2939,7 +2943,8 @@ public sealed class QuietHome : NUIApplication
  const int bikeMapX=560,bikeMapY=290,bikeMapW=1280,bikeMapH=690,bikeMapR=430;
  // Street map tiles per plan (key "theme|width|height|radius for 400 m"), from the helper's cache.
  readonly Dictionary<string,Tuple<List<Tuple<string,int,int>>,int>> basemaps=new Dictionary<string,Tuple<List<Tuple<string,int,int>>,int>>();readonly Dictionary<string,DateTime> basemapAsked=new Dictionary<string,DateTime>();
- string MapKey(int w,int h,int r){return (dark?"dark":"light")+"|"+w+"|"+h+"|"+r;}
+ static bool Demo(){try{return File.Exists("/tmp/quiet-demo");}catch{return false;}}
+ string MapKey(int w,int h,int r){return (Demo()?"demo-":"")+(dark?"dark":"light")+"|"+w+"|"+h+"|"+r;}
  // Adds the street map to a plan panel (asks for it the first time), with a dark veil in the dark theme.
  void AddBasemap(View map,int mw,int mh,int r,string target="")
  {
@@ -3011,7 +3016,7 @@ public sealed class QuietHome : NUIApplication
   leg.Add(new View{Position2D=new Position2D(556,9),Size2D=new Size2D(24,24),CornerRadius=new Vector4(12,12,12,12),BackgroundColor=HexColor("#83C491")});
   leg.Add(Label("Métro Bel-Air",588,6,160,30,16,ink,"Medium"));
   if(mapSel<0){var tip=new View{Position2D=new Position2D(mw-370,20),Size2D=new Size2D(350,42),CornerRadius=new Vector4(14,14,14,14),BackgroundColor=Sf(1,1,1,.92f)};map.Add(tip);var tl=Label("→ pour explorer la carte",0,6,350,30,17,ink,"Medium");tl.HorizontalAlignment=HorizontalAlignment.Center;tip.Add(tl);}
-  var attr=Label("© les contributeurs d’OpenStreetMap",mw-330,mh-36,310,26,14,dark?new Color(1,1,1,.6f):new Color(0,0,0,.55f),"Medium");attr.HorizontalAlignment=HorizontalAlignment.End;map.Add(attr);
+  var attr=Label("Plan IGN © IGN · © OpenStreetMap",mw-330,mh-36,310,26,14,dark?new Color(1,1,1,.6f):new Color(0,0,0,.55f),"Medium");attr.HorizontalAlignment=HorizontalAlignment.End;map.Add(attr);
  }
  void RequestBasemap(string key)
  {
@@ -3036,6 +3041,9 @@ public sealed class QuietHome : NUIApplication
  sealed class FindItem { public string Id="",Name="",Bs="",Model="",State="",Zone="",Sound="",Located=""; public int Bat=-1,Acc,Dx,Dy; public long Dist; }
  readonly List<FindItem> findItems=new List<FindItem>();bool findUnlocked,findLoaded;string pinEntry="",pinFirst=null,pinMsg="",findFocus="",pendingFind;int pinFails;DateTime pinLockUntil=DateTime.MinValue,lastFindRequest=DateTime.MinValue;string ringAsk="";int ringSel;
  const int findMapX=560,findMapY=290,findMapW=1280,findMapH=690,findMapR=170,findFocusR=300;
+ // Zoom steps: pixels for 400 m. -1 = automatic (overview or device).
+ static readonly int[] findZooms={45,80,120,170,300,520,900};int findZoom=-1;
+ void FindZoom(int dir){int cur=findZoom>=0?findZoom:Array.IndexOf(findZooms,findFocus!=""?findFocusR:findMapR);findZoom=Math.Max(0,Math.Min(findZooms.Length-1,cur+dir));RebuildKeepFocus();}
  string PinPath(){try{return System.IO.Path.Combine(Current.DirectoryInfo.Data,"find-pin.txt");}catch{return "";}}
  static string PinHash(string salt,string pin){using(var sha=System.Security.Cryptography.SHA256.Create())return Convert.ToBase64String(sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(salt+":"+pin)));}
  bool PinExists(){try{return File.Exists(PinPath());}catch{return false;}}
@@ -3043,11 +3051,11 @@ public sealed class QuietHome : NUIApplication
  void PinSave(string pin){try{string salt=Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(12));File.WriteAllText(PinPath(),salt+":"+PinHash(salt,pin));}catch{}}
  void PinKey(string k)
  {
-  if(DateTime.Now<pinLockUntil){pinMsg="Trop d’essais · patientez "+(int)(pinLockUntil-DateTime.Now).TotalSeconds+" s";RebuildKeepFocus();return;}
+  if(DateTime.Now<pinLockUntil){pinMsg="Trop d’essais · patientez "+(int)(pinLockUntil-DateTime.Now).TotalSeconds+" s";PinFocusOne();return;}
   if(k=="back"){Home("find_back");return;}
-  if(k=="del"){if(pinEntry.Length>0)pinEntry=pinEntry.Substring(0,pinEntry.Length-1);RebuildKeepFocus();return;}
+  if(k=="del"){if(pinEntry.Length>0)pinEntry=pinEntry.Substring(0,pinEntry.Length-1);PinFocusOne();return;}
   if(pinEntry.Length<4)pinEntry+=k;
-  if(pinEntry.Length<4){RebuildKeepFocus();return;}
+  if(pinEntry.Length<4){PinFocusOne();return;}
   string entry=pinEntry;pinEntry="";
   if(!PinExists()){
    if(pinFirst==null){pinFirst=entry;pinMsg="";}
@@ -3056,17 +3064,21 @@ public sealed class QuietHome : NUIApplication
   }
   else if(PinCheck(entry)){Unlock();return;}
   else{pinFails++;pinMsg=pinFails>=3?"Code incorrect · patientez 30 s":"Code incorrect";if(pinFails>=3){pinFails=0;pinLockUntil=DateTime.Now.AddSeconds(30);}}
-  RebuildKeepFocus();
+  PinFocusOne();
  }
+ // The PIN pad never shows which digit was chosen: focus goes back to 1 after every key, and the footer names no digit.
+ void PinFocusOne(){BuildPage();for(int i=0;i<slots.Count;i++)if(slots[i].Action=="pin:1"){selected=i;area=1;break;}UpdateFocus(false);}
  void Unlock(){findUnlocked=true;pinFails=0;pinMsg="";area=1;selected=0;if(!findLoaded||DateTime.Now-lastFindRequest>=TimeSpan.FromSeconds(20))RequestExtra(false,false,false,false,false,true);BuildPage();}
  void BuildFind()
  {
+  if(!findUnlocked&&Demo()){findUnlocked=true;findItems.Clear();findLoaded=false;RequestExtra(false,false,false,false,false,true);}
   if(!findUnlocked){BuildPinPad();return;}
   Text("Appareils et objets",80,232,1000,44,30,ink,"Semibold");
   var src=Text("Localiser (iCloud)"+(findLoaded?"":" · chargement…"),1140,236,700,36,19,muted,"Medium");src.HorizontalAlignment=HorizontalAlignment.End;
-  var items=findItems.OrderBy(f=>f.State=="home"?0:1).ThenBy(f=>f.Dist).Take(5).ToList();
+  // iPhones first, then whatever is at home, then by distance
+  var items=findItems.OrderBy(f=>f.Model.StartsWith("iPhone")||f.Name.Contains("iPhone")?0:1).ThenBy(f=>f.State=="home"?0:1).ThenBy(f=>f.Dist).Take(5).ToList();
   var focus=items.FirstOrDefault(f=>f.Id==findFocus);if(focus==null)findFocus="";
-  int cw=460,ch=124,gy=12,R=focus!=null?findFocusR:findMapR,mw=findMapW,mh=findMapH,cx=mw/2,cy=mh/2;var pinInk=new Color(.10f,.12f,.16f,1);
+  int cw=460,ch=124,gy=12,R=findZoom>=0?findZooms[findZoom]:(focus!=null?findFocusR:findMapR),mw=findMapW,mh=findMapH,cx=mw/2,cy=mh/2;var pinInk=new Color(.10f,.12f,.16f,1);
   // plan centre: home, or the chosen device (others placed relative to it when they are in the same area)
   bool far=focus!=null&&focus.Dist>=20000;int ox=focus!=null&&!far?focus.Dx:0,oy=focus!=null&&!far?focus.Dy:0;
   if(items.Count==0)Text(findLoaded?"Aucun appareil localisé.":"Chargement…",80,300,460,50,24,muted,"Medium");
@@ -3106,7 +3118,11 @@ public sealed class QuietHome : NUIApplication
   leg.Add(Label("Maison",48,6,80,30,16,ink,"Medium"));
   leg.Add(new View{Position2D=new Position2D(134,9),Size2D=new Size2D(24,24),CornerRadius=new Vector4(12,12,12,12),BackgroundColor=white,BorderlineWidth=3,BorderlineColor=accent});
   leg.Add(Label("Appareil (n° de la tuile)",166,6,290,30,16,ink,"Medium"));
-  var attr=Label("© les contributeurs d’OpenStreetMap",mw-330,mh-36,310,26,14,dark?new Color(1,1,1,.6f):new Color(0,0,0,.55f),"Medium");attr.HorizontalAlignment=HorizontalAlignment.End;map.Add(attr);
+  var attr=Label("Plan IGN © IGN · © OpenStreetMap",mw-330,mh-36,310,26,14,dark?new Color(1,1,1,.6f):new Color(0,0,0,.55f),"Medium");attr.HorizontalAlignment=HorizontalAlignment.End;map.Add(attr);
+  for(int z=0;z<2;z++){int bx=findMapX+mw-86,by=findMapY+(focus!=null?150:20)+z*76;
+   var zb=Panel(bx+33,by+33,66,66,Sf(1,1,1,.94f),33);zb.PivotPoint=new Position(.5f,.5f,.5f);zb.PositionUsesPivotPoint=true;
+   var zl=Label(z==0?"+":"−",0,0,66,62,38,ink,"Semibold");zl.HorizontalAlignment=HorizontalAlignment.Center;zb.Add(zl);
+   slots.Add(new Slot{Card=zb,Name=z==0?"Zoom avant":"Zoom arrière",Action=z==0?"findzoom:in":"findzoom:out",Description="Zoom de la carte · CH +/− sur la télécommande",Row=z,X=bx,Y=by,W=66,H=66});}
   if(ringAsk!="")BuildRingConfirm();
  }
  string FindPlace(FindItem it)
@@ -3133,7 +3149,7 @@ public sealed class QuietHome : NUIApplication
    var card=Panel(x+kw/2,y+kh/2,kw,kh,Sf(1,1,1,.92f),22);card.PivotPoint=new Position(.5f,.5f,.5f);card.PositionUsesPivotPoint=true;
    string lab=keys[i]=="del"?"Effacer":keys[i]=="back"?"Annuler":keys[i];
    var l=Label(lab,0,0,kw,kh,keys[i].Length==1?40:22,ink,keys[i].Length==1?"Display":"Semibold");l.HorizontalAlignment=HorizontalAlignment.Center;card.Add(l);
-   slots.Add(new Slot{Card=card,Name=lab,Action="pin:"+keys[i],Description="Chiffres de la télécommande ou flèches + OK",Row=row,X=x,Y=y,W=kw,H=kh});}
+   slots.Add(new Slot{Card=card,Name="",Action="pin:"+keys[i],Description="Chiffres de la télécommande ou flèches + OK",Row=row,X=x,Y=y,W=kw,H=kh});}
  }
  void ReceiveFind(string json)
  {
@@ -3161,7 +3177,7 @@ public sealed class QuietHome : NUIApplication
   for(int i=0;i<2;i++){bool f=i==ringSel;var b=new View{Position2D=new Position2D(bx+i*(bw+gx),160),Size2D=new Size2D(bw,bh),CornerRadius=new Vector4(20,20,20,20),BackgroundColor=f?(i==1?new Color(.89f,.22f,.17f,1):accent):Sf(.93f,.94f,.97f,1)};panel.Add(b);
    var l=Label(lab[i],0,0,bw,bh,24,f?white:ink,"Semibold");l.HorizontalAlignment=HorizontalAlignment.Center;b.Add(l);}
  }
- void FocusFind(string id){findFocus=findFocus==id?"":id;RebuildKeepFocus();}
+ void FocusFind(string id){findFocus=findFocus==id?"":id;findZoom=-1;RebuildKeepFocus();}
  void FindSound(string id)
  {
   var it=findItems.FirstOrDefault(f=>f.Id==id);if(it==null)return;
