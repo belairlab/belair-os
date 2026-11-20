@@ -295,6 +295,7 @@ public sealed class QuickLaunch : NUIApplication {
  // ---- street map behind the plans: IGN's Plan IGN (open licence, no key; clean, Apple Plans-like), OpenStreetMap
  // when a tile is missing. Fetched once and kept (a few dozen tiles per view). ----
  // request "dark|width|height|radius": the plan is width×height display pixels, 400 m = radius pixels, centred on Bel-Air.
+ static int basemapCalls;
  static readonly System.Threading.SemaphoreSlim tileGate=new System.Threading.SemaphoreSlim(12);
  // One map tile from the cache, else Plan IGN, else OpenStreetMap (IGN has no detailed tiles outside France).
  static string GetTile(string dir,int z,int x,int y){
@@ -320,13 +321,15 @@ public sealed class QuickLaunch : NUIApplication {
   var p=request.Split('|');if(p.Length<4)return null;
   foreach(var old in new[]{"basemap-dark_all","basemap-light_all","basemap-osm"})try{string od=System.IO.Path.Combine(SharedDir(""),old);if(Directory.Exists(od))Directory.Delete(od,true);}catch{}
   int W=int.Parse(p[1]),H=int.Parse(p[2]);double R=double.Parse(p[3],CultureInfo.InvariantCulture);int z=16;
+  // centre: home, a device, or a point the map was moved to ("pt:x,y" in Web Mercator world units)
+  LoadCenter();double cLat=ctrLat,cLon=ctrLon;
+  if(p.Length>4&&p[4].StartsWith("device_tracker.")){if(!findPos.ContainsKey(p[4]))FetchFindJson();if(findPos.TryGetValue(p[4],out var fp)){cLat=fp[0];cLon=fp[1];}else return null;}
+  else if(p.Length>4&&p[4].StartsWith("pt:")){var q=p[4].Substring(3).Split(',');double wx=double.Parse(q[0],CultureInfo.InvariantCulture),wy=Math.Max(0.5,Math.Min(255.5,double.Parse(q[1],CultureInfo.InvariantCulture)));cLon=wx/256*360-180;cLat=Math.Atan(Math.Sinh(Math.PI*(1-2*wy/256)))*180/Math.PI;}
   // zoom level whose tiles are shown at or below their own size (sharp): never stretched more than 10 %
-  double zlat=(p.Length>4&&findPos.TryGetValue(p[4],out var zp)?zp[0]:ctrLat)*Math.PI/180;
+  double zlat=cLat*Math.PI/180;
   Func<int,double> scale=zz=>R/400.0*156543.03392*Math.Cos(zlat)/Math.Pow(2,zz);
   while(z<19&&scale(z)>1.1)z++;
   while(z>0&&scale(z)<0.55)z--;
-  LoadCenter();double cLat=ctrLat,cLon=ctrLon;
-  if(p.Length>4&&p[4].StartsWith("device_tracker.")){if(!findPos.ContainsKey(p[4]))FetchFindJson();if(findPos.TryGetValue(p[4],out var fp)){cLat=fp[0];cLon=fp[1];}else return null;}
   double latr=cLat*Math.PI/180,world=256*Math.Pow(2,z);
   double cx=(cLon+180)/360*world,cy=(1-Math.Log(Math.Tan(latr)+1/Math.Cos(latr))/Math.PI)/2*world;
   double mpp=156543.03392*Math.Cos(latr)/Math.Pow(2,z),sc=R/400.0*mpp;
@@ -334,6 +337,8 @@ public sealed class QuickLaunch : NUIApplication {
   int tx0=(int)Math.Floor((cx-hw)/256),tx1=(int)Math.Floor((cx+hw)/256),ty0=(int)Math.Floor((cy-hh)/256),ty1=(int)Math.Floor((cy+hh)/256);
   if((tx1-tx0+1)*(ty1-ty0+1)>96){Tlog("basemap R="+R+" z="+z+" too many tiles "+(tx1-tx0+1)*(ty1-ty0+1));return null;}
   string dir=SharedDir("basemap-ign");
+  // keep the tile cache bounded (about 2,000 tiles, ~75 MB): drop the oldest quarter when it grows past that
+  if(++basemapCalls%40==1)Task.Run(()=>{try{var files=new System.IO.DirectoryInfo(dir).GetFiles("*.png");if(files.Length>2000)foreach(var f in files.OrderBy(f=>f.LastWriteTimeUtc).Take(files.Length-1500))f.Delete();}catch{}});
   var jobs=new List<Task<string[]>>();
   int nTiles=1<<z;
   for(int tx=tx0;tx<=tx1;tx++)for(int ty=ty0;ty<=ty1;ty++){if(ty<0||ty>=nTiles)continue;int x=((tx%nTiles)+nTiles)%nTiles,y=ty,place=tx;
@@ -341,7 +346,7 @@ public sealed class QuickLaunch : NUIApplication {
   var tw=Stopwatch.StartNew();Task.WaitAll(jobs.ToArray());PrefetchAround(dir,z,cx,cy,hw,hh);
   Tlog("basemap R="+R+" z="+z+" tiles="+jobs.Count+" ok="+jobs.Count(j=>j.Result!=null)+" "+tw.ElapsedMilliseconds+"ms");
   var ms=new MemoryStream();
-  using(var w=new Utf8JsonWriter(ms)){w.WriteStartObject();w.WriteString("Key",request+(ctrLoaded||p.Length>4?"":"|metro"));w.WriteNumber("Size",(int)Math.Ceiling(256*sc));w.WriteNumber("Missing",jobs.Count(j=>j.Result==null));w.WriteStartArray("Tiles");
+  using(var w=new Utf8JsonWriter(ms)){w.WriteStartObject();w.WriteString("Key",request+(ctrLoaded||p.Length>4?"":"|metro"));w.WriteNumber("Size",(int)Math.Ceiling(256*sc));w.WriteNumber("Missing",jobs.Count(j=>j.Result==null));var cw=Merc(cLat,cLon);w.WriteNumber("CWx",cw[0]);w.WriteNumber("CWy",cw[1]);w.WriteStartArray("Tiles");
    foreach(var j in jobs){var t=j.Result;if(t==null)continue;w.WriteStartArray();w.WriteStringValue(t[0]);w.WriteNumberValue(int.Parse(t[1]));w.WriteNumberValue(int.Parse(t[2]));w.WriteEndArray();}
    w.WriteEndArray();w.WriteEndObject();}
   return System.Text.Encoding.UTF8.GetString(ms.ToArray());
