@@ -43,7 +43,8 @@ public sealed class QuickLaunch : NUIApplication {
  // Banners: a small notification-level window over any input (Apple TV on HDMI included). It stays until OK or Back:
  // only those two keys are grabbed (topmost) while it is shown, every other key keeps going to the Apple TV.
  Window banner;readonly Queue<string[]> bannerQueue=new Queue<string[]>();bool bannerHeld;Tizen.NUI.Timer bannerTimer;
- const int keyReturn=36,keyBack=166;
+ // Return and Back from the TV remote; Mute also arrives from the Apple TV's remote (it drives the TV's sound).
+ const int keyReturn=36,keyBack=166,keyMute=121;static volatile bool closeRequested,bannerVisible;static DateTime ignoreAtvUntil=DateTime.MinValue;
  void ShowBanner(string title,string body,string colour="#669EFF"){
   ShowBanner(title,body,colour,"info");
  }
@@ -67,20 +68,20 @@ public sealed class QuickLaunch : NUIApplication {
    if(pic!="")tile.Add(new ImageView{ResourceUrl=pic,Position2D=new Position2D(photo?0:18,photo?0:18),Size2D=new Size2D(photo?pw:76,photo?112:76),FittingMode=photo?FittingModeType.ScaleToFill:FittingModeType.ShrinkToFit,CornerRadius=photo?new Vector4(22,22,22,22):new Vector4(0,0,0,0)});
    panel.Add(new TextLabel{Text=b[0],Position2D=new Position2D(tx,16),Size2D=new Size2D(w-tx-28,48),PixelSize=30,TextColor=Color.White,VerticalAlignment=VerticalAlignment.Center});
    panel.Add(new TextLabel{Text=b[1],Position2D=new Position2D(tx,64),Size2D=new Size2D(w-tx-28,70),PixelSize=23,TextColor=new Color(1,1,1,.80f),MultiLine=true,VerticalAlignment=VerticalAlignment.Top});
-   var hint=new TextLabel{Text=b.Length>4&&b[4]!="0"&&b[4]!=""?"":"OK pour fermer",Position2D=new Position2D(tx,h-40),Size2D=new Size2D(w-tx-28,28),PixelSize=18,TextColor=new Color(1,1,1,.5f),HorizontalAlignment=HorizontalAlignment.End};panel.Add(hint);
+   var hint=new TextLabel{Text=b.Length>4&&b[4]!="0"&&b[4]!=""?"":"OK ou clic central Apple TV pour fermer",Position2D=new Position2D(tx,h-40),Size2D=new Size2D(w-tx-28,28),PixelSize=18,TextColor=new Color(1,1,1,.5f),HorizontalAlignment=HorizontalAlignment.End};panel.Add(hint);
    banner.Add(panel);
-   banner.KeyEvent+=(o,e)=>{if(e.Key.State!=Key.StateType.Down)return;string k=e.Key.KeyPressedName;if(k=="Return"||k=="KP_Enter"||k=="XF86Back"||k=="Back"||k=="Escape")CloseBanner();};
-   bool g1=banner.GrabKeyTopmost(keyReturn),g2=banner.GrabKeyTopmost(keyBack);
-   banner.Show();
+   banner.KeyEvent+=(o,e)=>{if(e.Key.State!=Key.StateType.Down)return;string k=e.Key.KeyPressedName;Tlog("banner key "+k);if(k=="Return"||k=="KP_Enter"||k=="XF86Back"||k=="Back"||k=="Escape"||k=="XF86AudioMute")CloseBanner();};
+   bool g1=banner.GrabKeyTopmost(keyReturn),g2=banner.GrabKeyTopmost(keyBack),g3=banner.GrabKeyTopmost(keyMute);
+   banner.Show();bannerVisible=true;
    double secs;if(b.Length>4&&double.TryParse(b[4],NumberStyles.Float,CultureInfo.InvariantCulture,out secs)&&secs>=1){bannerTimer=new Tizen.NUI.Timer((uint)(Math.Min(secs,3600)*1000));bannerTimer.Tick+=(o,e)=>{CloseBanner();return false;};bannerTimer.Start();}
    if(!bannerHeld){bannerHeld=true;System.Threading.Interlocked.Increment(ref haBusy);}KeepWarm();
-   Tlog("banner shown grab="+g1+","+g2+" "+b[0]);
+   Tlog("banner shown grab="+g1+","+g2+","+g3+" "+b[0]);
   }catch(Exception x){Tlog("banner fail "+x.GetType().Name+" "+x.Message);banner=null;}
  }
  void CloseBanner(){
   bannerTimer?.Stop();bannerTimer=null;
-  try{if(banner!=null){banner.UngrabKeyTopmost(keyReturn);banner.UngrabKeyTopmost(keyBack);banner.Hide();banner.Dispose();banner=null;}}catch{banner=null;}
-  Tlog("banner closed");
+  try{if(banner!=null){banner.UngrabKeyTopmost(keyReturn);banner.UngrabKeyTopmost(keyBack);banner.UngrabKeyTopmost(keyMute);banner.Hide();banner.Dispose();banner=null;}}catch{banner=null;}
+  bannerVisible=false;Tlog("banner closed");
   if(bannerQueue.Count>0){NextBanner();return;}
   if(bannerHeld){bannerHeld=false;haLast=DateTime.UtcNow;System.Threading.Interlocked.Decrement(ref haBusy);}
  }
@@ -120,7 +121,7 @@ public sealed class QuickLaunch : NUIApplication {
   if(watchTimer!=null)return;
   if(!watchHeld){watchHeld=true;System.Threading.Interlocked.Increment(ref haBusy);}KeepWarm();
   watchTimer=new Tizen.NUI.Timer(300000);watchTimer.Tick+=(o,e)=>{RunCheck();return true;};watchTimer.Start();
-  pumpTimer=new Tizen.NUI.Timer(500);pumpTimer.Tick+=(o,e)=>{while(pendingAlerts.TryDequeue(out var a))ShowBanner(a[0],a[1],Tint(a[2]),a[2],a.Length>3?a[3]:"0");return true;};pumpTimer.Start();
+  pumpTimer=new Tizen.NUI.Timer(500);pumpTimer.Tick+=(o,e)=>{if(closeRequested){closeRequested=false;bannerQueue.Clear();if(banner!=null)CloseBanner();}while(pendingAlerts.TryDequeue(out var a))ShowBanner(a[0],a[1],Tint(a[2]),a[2],a.Length>3?a[3]:"0");return true;};pumpTimer.Start();
   RunCheck();StartPush();Tlog("watch on");
  }
  void StopWatch(){
@@ -135,13 +136,26 @@ public sealed class QuickLaunch : NUIApplication {
     try{
      WithHaSocket<string>((ws,ct)=>{
       WsSend(ws,"{\"id\":1,\"type\":\"subscribe_events\",\"event_type\":\"belair_notify\"}",ct);
+      WsSend(ws,"{\"id\":3,\"type\":\"subscribe_events\",\"event_type\":\"belair_close\"}",ct);
+      WsSend(ws,"{\"id\":4,\"type\":\"subscribe_trigger\",\"trigger\":{\"platform\":\"state\",\"entity_id\":\"media_player.appletv_appletv\"}}",ct);
       WsSend(ws,"{\"id\":2,\"type\":\"subscribe_trigger\",\"trigger\":{\"platform\":\"state\",\"entity_id\":\"vacuum.felix\"}}",ct);
       Tlog("push connected");
       while(ws.State==System.Net.WebSockets.WebSocketState.Open){
        string msg=WsRecv(ws,ct);if(msg==null)break;
        try{using(var doc=JsonDocument.Parse(msg)){
         var r=doc.RootElement;if(Str(r,"type")!="event")continue;var ev=r.GetProperty("event");
-        if(r.GetProperty("id").GetInt32()==1){var d=ev.GetProperty("data");string img=Str(d,"image");string to=d.TryGetProperty("timeout",out var tv)?tv.ToString():"0";
+        int sid=r.GetProperty("id").GetInt32();
+        if(sid==3){closeRequested=true;Tlog("close requested");continue;}
+        // The Apple TV remote's centre click toggles play/pause: with a banner up, take it as "close" and put playback back as it was.
+        if(sid==4){if(!bannerVisible||DateTime.UtcNow<ignoreAtvUntil)continue;var tr=ev.GetProperty("variables").GetProperty("trigger");string f=Str(tr.GetProperty("from_state"),"state"),t=Str(tr.GetProperty("to_state"),"state");
+         if(f=="playing"&&t=="paused"||f=="paused"&&t=="playing"){bannerVisible=false;ignoreAtvUntil=DateTime.UtcNow.AddSeconds(5);closeRequested=true;Tlog("close by Apple TV click "+f+">"+t);string want=f;
+          // Plex ignores a command that lands while it is still handling the click: wait, then check once more.
+          Task.Run(()=>{for(int attempt=0;attempt<2;attempt++){System.Threading.Thread.Sleep(attempt==0?1300:2200);
+           string now="";try{string js=HaGet("/api/states/media_player.appletv_appletv");if(js!=null)using(var d2=JsonDocument.Parse(js))now=Str(d2.RootElement,"state");}catch{}
+           if(now==want)break;ignoreAtvUntil=DateTime.UtcNow.AddSeconds(5);
+           HaPost("/api/services/media_player/"+(want=="playing"?"media_play":"media_pause"),"{\"entity_id\":\"media_player.appletv_appletv\"}");Tlog("restore "+want+" (was "+now+")");}});}
+         continue;}
+        if(sid==1){var d=ev.GetProperty("data");string img=Str(d,"image");string to=d.TryGetProperty("timeout",out var tv)?tv.ToString():"0";
          Alert(Str(d,"title")!=""?Str(d,"title"):"Maison",Str(d,"message"),img!=""?img:"maison",to);}
         else{var trig=ev.GetProperty("variables").GetProperty("trigger");string from=Str(trig.GetProperty("from_state"),"state"),now=Str(trig.GetProperty("to_state"),"state");
          if(from=="cleaning"&&(now=="returning"||now=="docked"))Alert("Félix a terminé","Le ménage est fini, il rentre à sa base.","image.felix_map_0");
