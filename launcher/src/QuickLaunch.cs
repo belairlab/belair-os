@@ -260,23 +260,26 @@ public sealed class QuickLaunch : NUIApplication {
  // ---- Localiser: every tracked device with a position (iCloud, companion app), relative to home ----
  const string findTemplate="{% set ns=namespace(o=[]) %}{% for s in states.device_tracker if s.attributes.latitude is defined and s.attributes.longitude is defined %}{% set d=device_id(s.entity_id) %}{% set ents=device_entities(d) if d else [] %}{% set snd=ents|select('search','play_sound')|first|default('') %}{% set loc=ents|select('search','last_located')|first|default('') %}{% set ns.o=ns.o+[{'id':s.entity_id,'name':s.name,'lat':s.attributes.latitude,'lon':s.attributes.longitude,'bat':s.attributes.battery|default(-1),'bs':s.attributes.battery_status|default(''),'model':s.attributes.device_name|default(''),'state':s.state,'zone':(state_attr('zone.'~s.state,'friendly_name') or ''),'acc':s.attributes.gps_accuracy|default(0),'sound':snd,'located':(states(loc) if loc else s.last_updated|string)}] %}{% endfor %}{{ ns.o|tojson }}";
  static readonly System.Collections.Concurrent.ConcurrentDictionary<string,double[]> findPos=new System.Collections.Concurrent.ConcurrentDictionary<string,double[]>();
+ // Web Mercator "world" coordinates (0..256 at zoom 0): exact positions at any scale, from the street to the whole world.
+ static double[] Merc(double lat,double lon){double r=lat*Math.PI/180;return new[]{(lon+180)/360*256,(1-Math.Log(Math.Tan(r)+1/Math.Cos(r))/Math.PI)/2*256};}
  static string FetchFindJson(){
   LoadCenter();
   if(Demo()){
    var now=DateTime.UtcNow;string Iso(int min)=>now.AddMinutes(-min).ToString("yyyy-MM-ddTHH:mm:ss+00:00");
    var demo=new[]{new{n="iPhone",m="iPhone 17 Pro",st="home",b=82,bs="NotCharging",dx=8,dy=-5,acc=12,t=1},new{n="MacBook Air",m="MacBook Air (13-inch, M5)",st="home",b=64,bs="Charging",dx=-14,dy=9,acc=35,t=4},
     new{n="AirPods Pro",m="AirPods Pro (2nd generation)",st="not_home",b=-1,bs="",dx=430,dy=-260,acc=18,t=9},new{n="iPhone (famille)",m="iPhone 17",st="not_home",b=41,bs="NotCharging",dx=-820,dy=610,acc=9,t=2},new{n="iPad",m="iPad Air",st="not_home",b=17,bs="NotCharging",dx=1900,dy=-1300,acc=25,t=26}};
-   var dms=new MemoryStream();using(var w=new Utf8JsonWriter(dms)){w.WriteStartArray();int i=0;foreach(var d in demo){i++;w.WriteStartObject();w.WriteString("id","device_tracker.demo_"+i);w.WriteString("name",d.n);w.WriteString("bs",d.bs);w.WriteString("model",d.m);w.WriteString("state",d.st);w.WriteString("zone","");w.WriteString("sound","button.demo_play_sound");w.WriteString("located",Iso(d.t));w.WriteNumber("bat",d.b);w.WriteNumber("acc",d.acc);w.WriteNumber("dist",(long)Math.Sqrt(d.dx*d.dx+d.dy*d.dy));w.WriteNumber("dx",d.dx);w.WriteNumber("dy",d.dy);w.WriteEndObject();
-    findPos["device_tracker.demo_"+i]=new[]{ctrLat+d.dy/111320.0,ctrLon+d.dx/(111320.0*Math.Cos(ctrLat*Math.PI/180))};}w.WriteEndArray();}
+   var dms=new MemoryStream();using(var w=new Utf8JsonWriter(dms)){var hm=Merc(ctrLat,ctrLon);w.WriteStartObject();w.WriteStartArray("home");w.WriteNumberValue(hm[0]);w.WriteNumberValue(hm[1]);w.WriteEndArray();w.WriteStartArray("items");int i=0;foreach(var d in demo){i++;double dla=ctrLat+d.dy/111320.0,dlo=ctrLon+d.dx/(111320.0*Math.Cos(ctrLat*Math.PI/180));var dm=Merc(dla,dlo);w.WriteStartObject();w.WriteNumber("wx",dm[0]);w.WriteNumber("wy",dm[1]);w.WriteString("id","device_tracker.demo_"+i);w.WriteString("name",d.n);w.WriteString("bs",d.bs);w.WriteString("model",d.m);w.WriteString("state",d.st);w.WriteString("zone","");w.WriteString("sound","button.demo_play_sound");w.WriteString("located",Iso(d.t));w.WriteNumber("bat",d.b);w.WriteNumber("acc",d.acc);w.WriteNumber("dist",(long)Math.Sqrt(d.dx*d.dx+d.dy*d.dy));w.WriteNumber("dx",d.dx);w.WriteNumber("dy",d.dy);w.WriteEndObject();
+    findPos["device_tracker.demo_"+i]=new[]{dla,dlo};}w.WriteEndArray();w.WriteEndObject();}
    return System.Text.Encoding.UTF8.GetString(dms.ToArray());
   }
   string raw=HaPostJson("/api/template",JsonSerializer.Serialize(new{template=findTemplate}));if(raw==null)return null;
   var ms=new MemoryStream();
   try{using(var doc=JsonDocument.Parse(raw))using(var w=new Utf8JsonWriter(ms)){
-   w.WriteStartArray();
+   var hm=Merc(ctrLat,ctrLon);w.WriteStartObject();w.WriteStartArray("home");w.WriteNumberValue(hm[0]);w.WriteNumberValue(hm[1]);w.WriteEndArray();
+   w.WriteStartArray("items");
    foreach(var d in doc.RootElement.EnumerateArray()){
     double la=d.GetProperty("lat").GetDouble(),lo=d.GetProperty("lon").GetDouble();double dx=Dx(lo),dy=Dy(la);findPos[Str(d,"id")]=new[]{la,lo};
-    w.WriteStartObject();
+    w.WriteStartObject();var wm=Merc(la,lo);w.WriteNumber("wx",wm[0]);w.WriteNumber("wy",wm[1]);
     foreach(var k in new[]{"id","name","bs","model","state","zone","sound","located"})w.WriteString(k,Str(d,k));
     w.WriteNumber("bat",d.TryGetProperty("bat",out var b)&&b.ValueKind==JsonValueKind.Number?b.GetInt32():-1);
     w.WriteNumber("acc",d.TryGetProperty("acc",out var a)&&a.ValueKind==JsonValueKind.Number?(int)a.GetDouble():0);
@@ -285,22 +288,43 @@ public sealed class QuickLaunch : NUIApplication {
     w.WriteNumber("dist",(long)Math.Round(dist));w.WriteNumber("dx",dist<20000?(int)Math.Round(dx):0);w.WriteNumber("dy",dist<20000?(int)Math.Round(dy):0);
     w.WriteEndObject();
    }
-   w.WriteEndArray();
+   w.WriteEndArray();w.WriteEndObject();
   }}catch{return null;}
   return System.Text.Encoding.UTF8.GetString(ms.ToArray());
  }
  // ---- street map behind the plans: IGN's Plan IGN (open licence, no key; clean, Apple Plans-like), OpenStreetMap
  // when a tile is missing. Fetched once and kept (a few dozen tiles per view). ----
  // request "dark|width|height|radius": the plan is width×height display pixels, 400 m = radius pixels, centred on Bel-Air.
+ static readonly System.Threading.SemaphoreSlim tileGate=new System.Threading.SemaphoreSlim(12);
+ // One map tile from the cache, else Plan IGN, else OpenStreetMap (IGN has no detailed tiles outside France).
+ static string GetTile(string dir,int z,int x,int y){
+  string f=System.IO.Path.Combine(dir,z+"_"+x+"_"+y+".png");if(File.Exists(f))return f;
+  if(webClient==null)WebGet("about:blank");
+  tileGate.Wait();
+  try{foreach(var url in new[]{"https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX="+z+"&TILEROW="+y+"&TILECOL="+x+"&FORMAT=image/png","https://tile.openstreetmap.org/"+z+"/"+x+"/"+y+".png"}){
+   if(File.Exists(f))break;
+   try{var bytes=webClient.GetByteArrayAsync(url).GetAwaiter().GetResult();if(bytes.Length>100&&bytes[0]==0x89){File.WriteAllBytes(f+".part",bytes);File.Move(f+".part",f,true);}}catch{}
+  }}finally{tileGate.Release();}
+  return File.Exists(f)?f:null;
+ }
+ // Fetches in the background the tiles of the zoom levels just above and below the view, so + and − are instant.
+ static void PrefetchAround(string dir,int z,double cx,double cy,double hw,double hh){
+  Task.Run(()=>{try{
+   foreach(int zz in new[]{z-1,z+1}){if(zz<0||zz>19)continue;double k=Math.Pow(2,zz-z),fx=cx*k,fy=cy*k,w=hw*k*(zz>z?0.6:1),h=hh*k*(zz>z?0.6:1);int n=1<<zz;
+    var list=new List<Task>();
+    for(int tx=(int)Math.Floor((fx-w)/256);tx<=(int)Math.Floor((fx+w)/256);tx++)for(int ty=(int)Math.Floor((fy-h)/256);ty<=(int)Math.Floor((fy+h)/256);ty++){if(ty<0||ty>=n||list.Count>=60)continue;int x=((tx%n)+n)%n,y=ty;list.Add(Task.Run(()=>GetTile(dir,zz,x,y)));}
+    Task.WaitAll(list.ToArray());}
+  }catch{}});
+ }
  static string FetchBasemapJson(string request){
   var p=request.Split('|');if(p.Length<4)return null;
   foreach(var old in new[]{"basemap-dark_all","basemap-light_all","basemap-osm"})try{string od=System.IO.Path.Combine(SharedDir(""),old);if(Directory.Exists(od))Directory.Delete(od,true);}catch{}
-  int W=int.Parse(p[1]),H=int.Parse(p[2]),R=int.Parse(p[3]);int z=16;
+  int W=int.Parse(p[1]),H=int.Parse(p[2]);double R=double.Parse(p[3],CultureInfo.InvariantCulture);int z=16;
   // zoom level whose tiles are shown at or below their own size (sharp): never stretched more than 10 %
   double zlat=(p.Length>4&&findPos.TryGetValue(p[4],out var zp)?zp[0]:ctrLat)*Math.PI/180;
   Func<int,double> scale=zz=>R/400.0*156543.03392*Math.Cos(zlat)/Math.Pow(2,zz);
   while(z<19&&scale(z)>1.1)z++;
-  while(z>10&&scale(z)<0.55)z--;
+  while(z>0&&scale(z)<0.55)z--;
   LoadCenter();double cLat=ctrLat,cLon=ctrLon;
   if(p.Length>4&&p[4].StartsWith("device_tracker.")){if(!findPos.ContainsKey(p[4]))FetchFindJson();if(findPos.TryGetValue(p[4],out var fp)){cLat=fp[0];cLon=fp[1];}else return null;}
   double latr=cLat*Math.PI/180,world=256*Math.Pow(2,z);
@@ -308,22 +332,16 @@ public sealed class QuickLaunch : NUIApplication {
   double mpp=156543.03392*Math.Cos(latr)/Math.Pow(2,z),sc=R/400.0*mpp;
   double hw=W/2.0/sc,hh=H/2.0/sc;
   int tx0=(int)Math.Floor((cx-hw)/256),tx1=(int)Math.Floor((cx+hw)/256),ty0=(int)Math.Floor((cy-hh)/256),ty1=(int)Math.Floor((cy+hh)/256);
-  if((tx1-tx0+1)*(ty1-ty0+1)>80)return null;
+  if((tx1-tx0+1)*(ty1-ty0+1)>96){Tlog("basemap R="+R+" z="+z+" too many tiles "+(tx1-tx0+1)*(ty1-ty0+1));return null;}
   string dir=SharedDir("basemap-ign");
   var jobs=new List<Task<string[]>>();
-  for(int tx=tx0;tx<=tx1;tx++)for(int ty=ty0;ty<=ty1;ty++){int x=tx,y=ty;
-   jobs.Add(Task.Run(()=>{
-    string f=System.IO.Path.Combine(dir,z+"_"+x+"_"+y+".png");
-    if(!File.Exists(f)){
-     if(webClient==null)WebGet("about:blank");
-     foreach(var url in new[]{"https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX="+z+"&TILEROW="+y+"&TILECOL="+x+"&FORMAT=image/png","https://tile.openstreetmap.org/"+z+"/"+x+"/"+y+".png"})
-     try{if(File.Exists(f))break;var bytes=webClient.GetByteArrayAsync(url).GetAwaiter().GetResult();if(bytes.Length>100&&bytes[0]==0x89){File.WriteAllBytes(f+".part",bytes);File.Move(f+".part",f,true);}}catch{}
-    }
-    return File.Exists(f)?new[]{f,((int)Math.Round((x*256-cx)*sc)).ToString(),((int)Math.Round((y*256-cy)*sc)).ToString()}:null;
-   }));}
-  Task.WaitAll(jobs.ToArray());
+  int nTiles=1<<z;
+  for(int tx=tx0;tx<=tx1;tx++)for(int ty=ty0;ty<=ty1;ty++){if(ty<0||ty>=nTiles)continue;int x=((tx%nTiles)+nTiles)%nTiles,y=ty,place=tx;
+   jobs.Add(Task.Run(()=>{string f=GetTile(dir,z,x,y);return f!=null?new[]{f,((int)Math.Round((place*256.0-cx)*sc)).ToString(),((int)Math.Round((y*256.0-cy)*sc)).ToString()}:null;}));}
+  var tw=Stopwatch.StartNew();Task.WaitAll(jobs.ToArray());PrefetchAround(dir,z,cx,cy,hw,hh);
+  Tlog("basemap R="+R+" z="+z+" tiles="+jobs.Count+" ok="+jobs.Count(j=>j.Result!=null)+" "+tw.ElapsedMilliseconds+"ms");
   var ms=new MemoryStream();
-  using(var w=new Utf8JsonWriter(ms)){w.WriteStartObject();w.WriteString("Key",request+(ctrLoaded||p.Length>4?"":"|metro"));w.WriteNumber("Size",(int)Math.Ceiling(256*sc));w.WriteStartArray("Tiles");
+  using(var w=new Utf8JsonWriter(ms)){w.WriteStartObject();w.WriteString("Key",request+(ctrLoaded||p.Length>4?"":"|metro"));w.WriteNumber("Size",(int)Math.Ceiling(256*sc));w.WriteNumber("Missing",jobs.Count(j=>j.Result==null));w.WriteStartArray("Tiles");
    foreach(var j in jobs){var t=j.Result;if(t==null)continue;w.WriteStartArray();w.WriteStringValue(t[0]);w.WriteNumberValue(int.Parse(t[1]));w.WriteNumberValue(int.Parse(t[2]));w.WriteEndArray();}
    w.WriteEndArray();w.WriteEndObject();}
   return System.Text.Encoding.UTF8.GetString(ms.ToArray());

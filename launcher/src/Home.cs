@@ -2944,12 +2944,24 @@ public sealed class QuietHome : NUIApplication
  // Street map tiles per plan (key "theme|width|height|radius for 400 m"), from the helper's cache.
  readonly Dictionary<string,Tuple<List<Tuple<string,int,int>>,int>> basemaps=new Dictionary<string,Tuple<List<Tuple<string,int,int>>,int>>();readonly Dictionary<string,DateTime> basemapAsked=new Dictionary<string,DateTime>();
  static bool Demo(){try{return File.Exists("/tmp/quiet-demo");}catch{return false;}}
- string MapKey(int w,int h,int r){return (Demo()?"demo-":"")+(dark?"dark":"light")+"|"+w+"|"+h+"|"+r;}
+ string MapKey(int w,int h,double r){return (Demo()?"demo-":"")+(dark?"dark":"light")+"|"+w+"|"+h+"|"+r.ToString("0.###",CultureInfo.InvariantCulture);}
+ readonly HashSet<string> basemapPartial=new HashSet<string>();
  // Adds the street map to a plan panel (asks for it the first time), with a dark veil in the dark theme.
- void AddBasemap(View map,int mw,int mh,int r,string target="")
+ void AddBasemap(View map,int mw,int mh,double r,string target="")
  {
   string key=MapKey(mw,mh,r)+(target!=""?"|"+target:"");
-  if(!basemaps.TryGetValue(key,out var bm)){if(!basemapAsked.TryGetValue(key,out var t)||DateTime.Now-t>=TimeSpan.FromSeconds(30)){basemapAsked[key]=DateTime.Now;RequestBasemap(key);}return;}
+  bool have=basemaps.TryGetValue(key,out var bm);
+  // ask again after 30 s, or after 6 s when the last answer still had missing tiles
+  if((!have||basemapPartial.Contains(key))&&(!basemapAsked.TryGetValue(key,out var t)||DateTime.Now-t>=TimeSpan.FromSeconds(have?6:30))){basemapAsked[key]=DateTime.Now;RequestBasemap(key);}
+  if(!have){
+   // While the right zoom loads, show the nearest loaded zoom of the same plan, scaled (blurry for a moment, never empty).
+   string prefix=(Demo()?"demo-":"")+(dark?"dark":"light")+"|"+mw+"|"+mh+"|",suffix=target!=""?"|"+target:"";Tuple<List<Tuple<string,int,int>>,int> best=null;double bk=0;
+   foreach(var kv in basemaps){if(!kv.Key.StartsWith(prefix))continue;var rest=kv.Key.Substring(prefix.Length);int bar=rest.IndexOf('|');string rs=bar<0?rest:rest.Substring(0,bar),sx=bar<0?"":rest.Substring(bar);if(sx!=suffix)continue;
+    if(!double.TryParse(rs,NumberStyles.Float,CultureInfo.InvariantCulture,out var or)||or<=0)continue;double k=r/or;if(k<0.24||k>4.2)continue;if(best==null||Math.Abs(Math.Log(k))<Math.Abs(Math.Log(bk))){best=kv.Value;bk=k;}}
+   if(best!=null){foreach(var tile in best.Item1){int sz=(int)Math.Ceiling(best.Item2*bk)+1;map.Add(new ImageView{ResourceUrl=tile.Item1,Position2D=new Position2D(mw/2+(int)Math.Floor(tile.Item2*bk),mh/2+(int)Math.Floor(tile.Item3*bk)),Size2D=new Size2D(sz,sz)});}
+    if(dark)map.Add(new View{Size2D=new Size2D(mw,mh),BackgroundColor=new Color(.05f,.07f,.11f,.58f)});}
+   return;
+  }
   foreach(var tile in bm.Item1)map.Add(new ImageView{ResourceUrl=tile.Item1,Position2D=new Position2D(mw/2+tile.Item2,mh/2+tile.Item3),Size2D=new Size2D(bm.Item2,bm.Item2),DesiredWidth=bm.Item2,DesiredHeight=bm.Item2});
   if(dark&&bm.Item1.Count>0)map.Add(new View{Size2D=new Size2D(mw,mh),BackgroundColor=new Color(.05f,.07f,.11f,.58f)});
  }
@@ -3033,17 +3045,18 @@ public sealed class QuietHome : NUIApplication
   try{using(var doc=JsonDocument.Parse(json)){
    var r=doc.RootElement;var list=new List<Tuple<string,int,int>>();
    foreach(var t in r.GetProperty("Tiles").EnumerateArray())list.Add(Tuple.Create(t[0].GetString()??"",t[1].GetInt32(),t[2].GetInt32()));
-   string key=JStr(r,"Key");if(list.Count>0&&!key.EndsWith("|metro"))basemaps[key]=Tuple.Create(list,(int)JNum(r,"Size"));
+   string key=JStr(r,"Key");if(list.Count>0&&!key.EndsWith("|metro")){basemaps[key]=Tuple.Create(list,(int)JNum(r,"Size"));if(JNum(r,"Missing")>0)basemapPartial.Add(key);else basemapPartial.Remove(key);basemapAsked[key]=DateTime.Now;}
   }}catch{}
   if((page==10||page==11&&findUnlocked)&&editing=="")RebuildKeepFocus();
  }
  // ---- Localiser: devices from Find My (Home Assistant's iCloud integration), behind a 4-digit PIN ----
- sealed class FindItem { public string Id="",Name="",Bs="",Model="",State="",Zone="",Sound="",Located=""; public int Bat=-1,Acc,Dx,Dy; public long Dist; }
+ sealed class FindItem { public string Id="",Name="",Bs="",Model="",State="",Zone="",Sound="",Located=""; public int Bat=-1,Acc,Dx,Dy; public long Dist; public double Wx,Wy; }
+ double homeWx=-1,homeWy=-1;
  readonly List<FindItem> findItems=new List<FindItem>();bool findUnlocked,findLoaded;string pinEntry="",pinFirst=null,pinMsg="",findFocus="",pendingFind;int pinFails;DateTime pinLockUntil=DateTime.MinValue,lastFindRequest=DateTime.MinValue;string ringAsk="";int ringSel;
  const int findMapX=560,findMapY=290,findMapW=1280,findMapH=690,findMapR=170,findFocusR=300;
  // Zoom steps: pixels for 400 m. -1 = automatic (overview or device).
- static readonly int[] findZooms={45,80,120,170,300,520,900};int findZoom=-1;
- void FindZoom(int dir){int cur=findZoom>=0?findZoom:Array.IndexOf(findZooms,findFocus!=""?findFocusR:findMapR);findZoom=Math.Max(0,Math.Min(findZooms.Length-1,cur+dir));RebuildKeepFocus();}
+ static readonly double[] findZooms={0.03,0.07,0.15,0.35,0.75,1.5,3,6,12,25,45,80,120,170,300,520,900};int findZoom=-1;
+ void FindZoom(int dir){int cur=findZoom>=0?findZoom:Array.IndexOf(findZooms,(double)(findFocus!=""?findFocusR:findMapR));findZoom=Math.Max(0,Math.Min(findZooms.Length-1,cur+dir));RebuildKeepFocus();}
  string PinPath(){try{return System.IO.Path.Combine(Current.DirectoryInfo.Data,"find-pin.txt");}catch{return "";}}
  static string PinHash(string salt,string pin){using(var sha=System.Security.Cryptography.SHA256.Create())return Convert.ToBase64String(sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(salt+":"+pin)));}
  bool PinExists(){try{return File.Exists(PinPath());}catch{return false;}}
@@ -3078,19 +3091,21 @@ public sealed class QuietHome : NUIApplication
   // iPhones first, then whatever is at home, then by distance
   var items=findItems.OrderBy(f=>f.Model.StartsWith("iPhone")||f.Name.Contains("iPhone")?0:1).ThenBy(f=>f.State=="home"?0:1).ThenBy(f=>f.Dist).Take(5).ToList();
   var focus=items.FirstOrDefault(f=>f.Id==findFocus);if(focus==null)findFocus="";
-  int cw=460,ch=124,gy=12,R=findZoom>=0?findZooms[findZoom]:(focus!=null?findFocusR:findMapR),mw=findMapW,mh=findMapH,cx=mw/2,cy=mh/2;var pinInk=new Color(.10f,.12f,.16f,1);
-  // plan centre: home, or the chosen device (others placed relative to it when they are in the same area)
-  bool far=focus!=null&&focus.Dist>=20000;int ox=focus!=null&&!far?focus.Dx:0,oy=focus!=null&&!far?focus.Dy:0;
+  int cw=460,ch=124,gy=12,mw=findMapW,mh=findMapH,cx=mw/2,cy=mh/2;double R=findZoom>=0?findZooms[findZoom]:(focus!=null?findFocusR:findMapR);var pinInk=new Color(.10f,.12f,.16f,1);
+  // plan centre: home, or the chosen device; every position in Web Mercator so far devices land right at any zoom
+  double cWx=focus!=null&&focus.Wx>0?focus.Wx:homeWx,cWy=focus!=null&&focus.Wx>0?focus.Wy:homeWy;
+  double cLat=Math.Atan(Math.Sinh(Math.PI*(1-2*cWy/256)));double pxPerW=R/400.0*156543.03392*Math.Cos(cLat);
+  Func<double,double,int[]> toPx=(wx,wy)=>{double px=cx+(wx-cWx)*pxPerW,py=cy+(wy-cWy)*pxPerW;return Math.Abs(px)>1e6||Math.Abs(py)>1e6?new[]{-99999,-99999}:new[]{(int)Math.Round(px),(int)Math.Round(py)};};
   if(items.Count==0)Text(findLoaded?"Aucun appareil localisé.":"Chargement…",80,300,460,50,24,muted,"Medium");
   var map=Panel(findMapX,findMapY,mw,mh,dark?new Color(.10f,.13f,.18f,1):new Color(.90f,.92f,.94f,1),26);map.ClippingMode=ClippingModeType.ClipChildren;
   AddBasemap(map,mw,mh,R,focus!=null?focus.Id:"");
   var ringC=dark?new Color(1,1,1,.45f):new Color(.10f,.14f,.22f,.45f);
-  if(focus==null)foreach(int m in new[]{500,1000}){int rr=m*R/400;map.Add(new View{Position2D=new Position2D(cx-rr,cy-rr),Size2D=new Size2D(rr*2,rr*2),CornerRadius=new Vector4(rr,rr,rr,rr),BackgroundColor=new Color(0,0,0,0),BorderlineWidth=2,BorderlineColor=ringC});
+  if(focus==null)foreach(int m in new[]{500,1000}){int rr=(int)(m*R/400);if(rr<14||rr>mw)continue;map.Add(new View{Position2D=new Position2D(cx-rr,cy-rr),Size2D=new Size2D(rr*2,rr*2),CornerRadius=new Vector4(rr,rr,rr,rr),BackgroundColor=new Color(0,0,0,0),BorderlineWidth=2,BorderlineColor=ringC});
    var rl=Label(m==1000?"1 km":"500 m",cx-40,cy-rr-24,80,22,14,ringC,"Semibold");rl.HorizontalAlignment=HorizontalAlignment.Center;map.Add(rl);}
-  if(!far){int hx=cx-ox*R/400,hy=cy+oy*R/400;if(hx>0&&hx<mw&&hy>0&&hy<mh){
-   var me=new View{Position2D=new Position2D(hx-15,hy-15),Size2D=new Size2D(30,30),CornerRadius=new Vector4(15,15,15,15),BackgroundColor=new Color(.94f,.33f,.31f,1),BorderlineWidth=3.5f,BorderlineColor=white};map.Add(me);
+  if(homeWx>0){var hp=toPx(homeWx,homeWy);if(hp[0]>0&&hp[0]<mw&&hp[1]>0&&hp[1]<mh){
+   var me=new View{Position2D=new Position2D(hp[0]-15,hp[1]-15),Size2D=new Size2D(30,30),CornerRadius=new Vector4(15,15,15,15),BackgroundColor=new Color(.94f,.33f,.31f,1),BorderlineWidth=3.5f,BorderlineColor=white};map.Add(me);
    me.Add(new View{Position2D=new Position2D(10,10),Size2D=new Size2D(10,10),CornerRadius=new Vector4(5,5,5,5),BackgroundColor=white});}}
-  if(focus!=null){int ar=Math.Max(18,Math.Min(260,focus.Acc*R/400));map.Add(new View{Position2D=new Position2D(cx-ar,cy-ar),Size2D=new Size2D(ar*2,ar*2),CornerRadius=new Vector4(ar,ar,ar,ar),BackgroundColor=new Color(accent.R,accent.G,accent.B,.16f),BorderlineWidth=2,BorderlineColor=new Color(accent.R,accent.G,accent.B,.6f)});}
+  if(focus!=null){int ar=(int)Math.Max(18,Math.Min(260,focus.Acc*R/400));map.Add(new View{Position2D=new Position2D(cx-ar,cy-ar),Size2D=new Size2D(ar*2,ar*2),CornerRadius=new Vector4(ar,ar,ar,ar),BackgroundColor=new Color(accent.R,accent.G,accent.B,.16f),BorderlineWidth=2,BorderlineColor=new Color(accent.R,accent.G,accent.B,.6f)});}
   for(int i=0;i<items.Count;i++){
    var it=items[i];int x=80,y=290+i*(ch+gy);
    var card=Panel(x+cw/2,y+ch/2,cw,ch,Sf(1,1,1,.92f),22);card.PivotPoint=new Position(.5f,.5f,.5f);card.PositionUsesPivotPoint=true;
@@ -3100,10 +3115,10 @@ public sealed class QuietHome : NUIApplication
    if(it.Bat>=0){bool chg=it.Bs.ToLowerInvariant().Contains("charg")&&!it.Bs.ToLowerInvariant().StartsWith("not");var bl=Label((chg?"⚡ ":"")+it.Bat+" %",cw-110,14,92,30,19,it.Bat<20&&!chg?new Color(.89f,.22f,.17f,1):muted,"Semibold");bl.HorizontalAlignment=HorizontalAlignment.End;card.Add(bl);}
    card.Add(Label(FindPlace(it),64,48,cw-82,30,19,it.State=="home"?new Color(.24f,.66f,.36f,1):ink,"Medium"));
    card.Add(Label(Clip((it.Model!=""?it.Model+" · ":"")+FindAge(it.Located),44),64,80,cw-82,28,16,muted,"Medium"));
-   bool same=focus!=null&&it.Id==focus.Id;int rx=same?0:(far?int.MaxValue/4:(it.Dx-ox)*R/400),ry=same?0:(far?int.MaxValue/4:(it.Dy-oy)*R/400);
-   bool onMap=same||(!far&&it.Dist<20000&&Math.Abs(rx)<mw/2-10&&Math.Abs(ry)<mh/2-10);
+   bool same=focus!=null&&it.Id==focus.Id;var ip=it.Wx>0?toPx(it.Wx,it.Wy):new[]{-99999,-99999};
+   bool onMap=ip[0]>10&&ip[0]<mw-10&&ip[1]>10&&ip[1]<mh-10;
    if(same){card.BackgroundColor=new Color(accent.R,accent.G,accent.B,dark?.30f:.18f);}
-   if(onMap){int px=cx+rx,py=cy-ry;var pin=new View{Position2D=new Position2D(px-15,py-15),Size2D=new Size2D(30,30),CornerRadius=new Vector4(15,15,15,15),BackgroundColor=white,BorderlineWidth=3.5f,BorderlineColor=accent};map.Add(pin);
+   if(onMap){int px=ip[0],py=ip[1];var pin=new View{Position2D=new Position2D(px-15,py-15),Size2D=new Size2D(30,30),CornerRadius=new Vector4(15,15,15,15),BackgroundColor=white,BorderlineWidth=3.5f,BorderlineColor=accent};map.Add(pin);
     var pl=Label((i+1).ToString(),0,0,30,30,16,pinInk,"Semibold");pl.HorizontalAlignment=HorizontalAlignment.Center;pin.Add(pl);}
    slots.Add(new Slot{Card=card,Name=it.Name,Action="find:"+it.Id,Description=(same?"OK : revenir à la maison":"OK : centrer la carte")+(it.Sound!=""?" · appui long : faire sonner":""),Row=i,X=x,Y=y,W=cw,H=ch});
   }
@@ -3118,6 +3133,8 @@ public sealed class QuietHome : NUIApplication
   leg.Add(Label("Maison",48,6,80,30,16,ink,"Medium"));
   leg.Add(new View{Position2D=new Position2D(134,9),Size2D=new Size2D(24,24),CornerRadius=new Vector4(12,12,12,12),BackgroundColor=white,BorderlineWidth=3,BorderlineColor=accent});
   leg.Add(Label("Appareil (n° de la tuile)",166,6,290,30,16,ink,"Medium"));
+  double widthKm=mw*400.0/R/1000.0;
+  var sw=Label("Largeur ≈ "+(widthKm<1?((int)(widthKm*1000))+" m":widthKm<10?widthKm.ToString("0.0",frCulture)+" km":Math.Round(widthKm).ToString("N0",frCulture)+" km"),mw-330,mh-62,310,26,15,ink,"Semibold");sw.HorizontalAlignment=HorizontalAlignment.End;map.Add(sw);
   var attr=Label("Plan IGN © IGN · © OpenStreetMap",mw-330,mh-36,310,26,14,dark?new Color(1,1,1,.6f):new Color(0,0,0,.55f),"Medium");attr.HorizontalAlignment=HorizontalAlignment.End;map.Add(attr);
   for(int z=0;z<2;z++){int bx=findMapX+mw-86,by=findMapY+(focus!=null?150:20)+z*76;
    var zb=Panel(bx+33,by+33,66,66,Sf(1,1,1,.94f),33);zb.PivotPoint=new Position(.5f,.5f,.5f);zb.PositionUsesPivotPoint=true;
@@ -3153,8 +3170,10 @@ public sealed class QuietHome : NUIApplication
  }
  void ReceiveFind(string json)
  {
-  try{using(var doc=JsonDocument.Parse(json)){var list=new List<FindItem>();
-   foreach(var d in doc.RootElement.EnumerateArray())list.Add(new FindItem{Id=JStr(d,"id"),Name=JStr(d,"name"),Bs=JStr(d,"bs"),Model=JStr(d,"model"),State=JStr(d,"state"),Zone=JStr(d,"zone"),Sound=JStr(d,"sound"),Located=JStr(d,"located"),Bat=(int)JNum(d,"bat"),Acc=(int)JNum(d,"acc"),Dx=(int)JNum(d,"dx"),Dy=(int)JNum(d,"dy"),Dist=(long)JNum(d,"dist")});
+  try{using(var doc=JsonDocument.Parse(json)){var list=new List<FindItem>();var root=doc.RootElement;
+   if(root.ValueKind==JsonValueKind.Object&&root.TryGetProperty("home",out var hw)&&hw.GetArrayLength()==2){homeWx=hw[0].GetDouble();homeWy=hw[1].GetDouble();}
+   var arr=root.ValueKind==JsonValueKind.Object?root.GetProperty("items"):root;
+   foreach(var d in arr.EnumerateArray())list.Add(new FindItem{Wx=JNum(d,"wx"),Wy=JNum(d,"wy"),Id=JStr(d,"id"),Name=JStr(d,"name"),Bs=JStr(d,"bs"),Model=JStr(d,"model"),State=JStr(d,"state"),Zone=JStr(d,"zone"),Sound=JStr(d,"sound"),Located=JStr(d,"located"),Bat=(int)JNum(d,"bat"),Acc=(int)JNum(d,"acc"),Dx=(int)JNum(d,"dx"),Dy=(int)JNum(d,"dy"),Dist=(long)JNum(d,"dist")});
    findItems.Clear();findItems.AddRange(list);findLoaded=true;}}catch{}
   if(page==11&&findUnlocked&&editing=="")RebuildKeepFocus();
  }

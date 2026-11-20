@@ -77,7 +77,7 @@ Des popups s'affichent en haut à droite de l'écran **par-dessus n'importe quel
 
 ![Localiser](docs/screenshots/localiser.jpg)
 
-- **Localiser** : les appareils de Localiser (intégration iCloud de Home Assistant) avec batterie et dernière localisation. OK centre la carte sur un appareil, CH +/− ou les boutons + et − règlent le zoom, un appui long propose de le faire sonner (Annuler sélectionné par défaut).
+- **Localiser** : les appareils de Localiser (intégration iCloud de Home Assistant) avec batterie et dernière localisation. OK centre la carte sur un appareil, CH +/− ou les boutons + et − règlent le zoom, de la rue au monde entier, un appui long propose de le faire sonner (Annuler sélectionné par défaut).
 
 | | |
 |---|---|
