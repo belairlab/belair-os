@@ -62,15 +62,20 @@ public sealed class QuietHome : NUIApplication
  static readonly string[] haSceneIcon={"bonjour","bonnenuit","film","pause"};
  static readonly string[] haCoverId={"cover.bureau_bureau","cover.chambre_chambre","cover.salon_salon","cover.cuisine_cuisine"};
  static readonly string[] haCoverName={"Bureau","Chambre","Salon","Cuisine"};
- static readonly string[] haLampId={"light.salon_lampe_entree","light.salon_lampe_musique","light.chambre_lampadaire","light.chambre_lampe_de_chevet_gauche","light.chambre_lampe_de_chevet_droite","light.bureau_lampadaire","light.couloir_couloir","switch.grillplats_plug","light.cuisine","light.salon_neon_rope_light","light.bureau_lantern_floor_lamp","light.uplighter_floor_lamp","light.tv_backlight_3_lite"};
- static readonly string[] haLampName={"Salon · Entrée","Salon · Musique","Chambre · Lampadaire","Chambre · Gauche","Chambre · Droite","Bureau","Couloir","Lampe Orange","Cuisine","Salon · Néon","Bureau · Lanterne","Lampadaire Govee","TV · Rétroéclairage"};
+ static readonly string[] haLampId={"light.salon_lampe_entree","light.salon_lampe_musique","light.chambre_lampadaire","light.chambre_lampe_de_chevet_gauche","light.chambre_lampe_de_chevet_droite","light.bureau_lampadaire","light.couloir_couloir","switch.grillplats_plug","light.cuisine","light.cuisine_spots","light.salon_neon_rope_light","light.bureau_lantern_floor_lamp","light.uplighter_floor_lamp","light.tv_backlight_3_lite"};
+ static readonly string[] haLampName={"Salon · Entrée","Salon · Musique","Chambre · Lampadaire","Chambre · Gauche","Chambre · Droite","Bureau","Couloir","Lampe Orange","Cuisine","Cuisine · Spots","Salon · Néon","Bureau · Lanterne","Lampadaire Govee","TV · Rétroéclairage"};
  const string cuisineGroup="light.cuisine";
- // Lamp grid on the Maison page: 5 columns of 334 px (13 lamps + the cinema card).
+ // Lamp grid on the Maison page: 5 columns of 334 px (14 lamps + the cinema card).
  const int lampCols=5,lampW=334,lampGap=19;
  // Dimmable lamps: OK toggles, a long press on OK opens a brightness panel.
  static readonly HashSet<string> dimLamps=new HashSet<string>{"light.salon_lampe_entree","light.salon_lampe_musique","light.chambre_lampadaire","light.chambre_lampe_de_chevet_gauche","light.chambre_lampe_de_chevet_droite","light.bureau_lampadaire","light.couloir_couloir","light.cuisine"};
  string pendingLamp;Tizen.NUI.Timer longPressTimer;bool keyUpSeen,swallowReturn;
- static readonly HashSet<string> goveeLamps=new HashSet<string>{"light.salon_neon_rope_light","light.bureau_lantern_floor_lamp","light.uplighter_floor_lamp","light.tv_backlight_3_lite"};
+ static readonly HashSet<string> goveeLamps=new HashSet<string>{"light.salon_neon_rope_light","light.bureau_lantern_floor_lamp","light.uplighter_floor_lamp","light.tv_backlight_3_lite","light.cuisine_spots"};
+ // Groups driven locally (Matter) whose scenes and music mode go to each bulb through Govee's cloud entities.
+ static readonly Dictionary<string,string[]> cloudMembers=new Dictionary<string,string[]>{{"light.cuisine_spots",new[]{"light.smart_led_bulb","light.smart_led_bulb_2","light.smart_led_bulb_3","light.smart_led_bulb_4"}}};
+ static string EntJson(IEnumerable<string> ids){var l=ids.ToList();return l.Count==1?"\""+l[0]+"\"":"["+string.Join(",",l.Select(x=>"\""+x+"\""))+"]";}
+ // "light.smart_led_bulb_2" with base "smart_led_bulb" → "select.smart_led_bulb_music_mode_2"
+ static IEnumerable<string> MemberEntities(string id,string domain,string suffix){if(!cloudMembers.TryGetValue(id,out var m)){yield return domain+"."+id.Substring(id.IndexOf('.')+1)+suffix;yield break;}string b=m[0].Substring(6);foreach(var x in m)yield return domain+"."+b+suffix+x.Substring(6+b.Length);}
  readonly HashSet<string> colorLights=new HashSet<string>();readonly Dictionary<string,string[]> selectOptions=new Dictionary<string,string[]>();readonly Dictionary<string,int> lightBri=new Dictionary<string,int>();
  readonly Dictionary<string,string> lightEffect=new Dictionary<string,string>();readonly Dictionary<string,string[]> lightEffects=new Dictionary<string,string[]>();
  bool lightOpen;string lightId="";int lightRow,lightCol;
@@ -1521,7 +1526,7 @@ public sealed class QuietHome : NUIApplication
  void SendGovee(string id,GoveeScene sc)
  {
   if(sc.En==""){ShowError("Scène indisponible.");return;}
-  string body="{\"p\":\"light/turn_on\",\"b\":{\"entity_id\":\""+id+"\",\"effect\":\""+sc.En.Replace("\\","\\\\").Replace("\"","\\\"")+"\"}}";
+  string body="{\"p\":\"light/turn_on\",\"b\":{\"entity_id\":"+(cloudMembers.TryGetValue(id,out var cm)?EntJson(cm):"\""+id+"\"")+",\"effect\":\""+sc.En.Replace("\\","\\\\").Replace("\"","\\\"")+"\"}}";
   IntPtr ac;int r=app_control_create(out ac);
   if(r==0){try{
    r=app_control_set_app_id(ac,"com.samsung.tv.quicklaunch");
@@ -1543,8 +1548,8 @@ public sealed class QuietHome : NUIApplication
  int NearestBriStep(string id){if(!IsLampOn(id)||!lightBri.TryGetValue(id,out var b)||b<0)return 0;int best=1;for(int i=0;i<lightBriSteps.Length;i++)if(Math.Abs(lightBriSteps[i]-b*100/255.0)<Math.Abs(lightBriSteps[best-1]-b*100/255.0))best=i+1;return best;}
  // Govee panel rows: 0 power/brightness, 1 scenes, 4 music mode, 5 options (DreamView, light zones), 3 moods, 2 colours.
  string LightObj(){return lightId.StartsWith("light.")?lightId.Substring(6):lightId;}
- string MusicSelect(){return "select."+LightObj()+"_music_mode";}
- string MusicSwitch(){return "switch."+LightObj()+"_music_mode";}
+ string MusicSelect(){return MemberEntities(lightId,"select","_music_mode").First();}
+ string MusicSwitch(){return MemberEntities(lightId,"switch","_music_mode").First();}
  string[] MusicModes(){return selectOptions.TryGetValue(MusicSelect(),out var o)?o.Take(10).ToArray():new string[0];}
  static readonly string[] optionSuffix={"_dreamview","_bottom_light","_side_light","_ripple_light"};
  static readonly string[] optionName={"DreamView","Lumière basse","Lumière latérale","Halo"};
@@ -1606,9 +1611,10 @@ public sealed class QuietHome : NUIApplication
   }
   else if(lightRow==4){
    string sw=MusicSwitch(),sel=MusicSelect();bool music=haLampState.TryGetValue(sw,out var ms)&&ms=="on";
-   if(lightCol==0){haLampState[sw]=music?"off":"on";HaCommanded(sw);body="{\"p\":\"switch/"+(music?"turn_off":"turn_on")+"\",\"b\":{\"entity_id\":\""+sw+"\"}}";}
+   string sws=EntJson(MemberEntities(id,"switch","_music_mode")),sels=EntJson(MemberEntities(id,"select","_music_mode"));
+   if(lightCol==0){haLampState[sw]=music?"off":"on";HaCommanded(sw);body="{\"p\":\"switch/"+(music?"turn_off":"turn_on")+"\",\"b\":{\"entity_id\":"+sws+"}}";}
    else{string opt=MusicModes()[lightCol-1];haSensor[sel]=opt;haLampState[sw]="on";haLampState[id]="on";HaCommanded(sw);HaCommanded(sel);
-    body="{\"p\":\"select/select_option\",\"b\":{\"entity_id\":\""+sel+"\",\"option\":\""+opt.Replace("\"","")+"\"},\"w\":0},{\"p\":\"switch/turn_on\",\"b\":{\"entity_id\":\""+sw+"\"},\"w\":400}";}
+    body="{\"p\":\"select/select_option\",\"b\":{\"entity_id\":"+sels+",\"option\":\""+opt.Replace("\"","")+"\"},\"w\":0},{\"p\":\"switch/turn_on\",\"b\":{\"entity_id\":"+sws+"},\"w\":400}";}
   }
   else if(lightRow==5){int oi=LightOptions()[lightCol];string sw="switch."+LightObj()+optionSuffix[oi];bool o=haLampState.TryGetValue(sw,out var os)&&os=="on";haLampState[sw]=o?"off":"on";HaCommanded(sw);
    body="{\"p\":\"switch/"+(o?"turn_off":"turn_on")+"\",\"b\":{\"entity_id\":\""+sw+"\"}}";}

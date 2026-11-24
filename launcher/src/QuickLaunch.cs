@@ -548,9 +548,14 @@ public sealed class QuickLaunch : NUIApplication {
  // Service calls with data, in order, each after an optional wait "w" in ms: [{"p":"select/select_option","b":{...},"w":0},...].
  // Limited to the robot's services and to opening a link / pressing keys on the Apple TV.
  static bool HaCallAllowed(string path,JsonElement body){
-  string entity=Str(body,"entity_id");
-  if(path=="select/select_option")return entity=="select.felix_mode_de_nettoyage"||entity.StartsWith("select.")&&entity.EndsWith("_music_mode");
-  if(path=="switch/turn_on"||path=="switch/turn_off")return entity.StartsWith("switch.")&&new[]{"_music_mode","_dreamview","_bottom_light","_side_light","_ripple_light"}.Any(x=>entity.EndsWith(x));
+  // entity_id may be a list (a scene or music mode sent to every bulb of a group): every entity must be allowed
+  if(body.TryGetProperty("entity_id",out var eids)&&eids.ValueKind==JsonValueKind.Array){if(eids.GetArrayLength()==0||eids.GetArrayLength()>12)return false;foreach(var x in eids.EnumerateArray()){if(x.ValueKind!=JsonValueKind.String||!HaEntityAllowed(path,x.GetString()??""))return false;}return true;}
+  return HaEntityAllowed(path,Str(body,"entity_id"));
+ }
+ static readonly Regex musicSelect=new Regex(@"^select\.[a-z0-9_]+_music_mode(_\d+)?$"),govSwitch=new Regex(@"^switch\.[a-z0-9_]+_(music_mode|dreamview|bottom_light|side_light|ripple_light)(_\d+)?$");
+ static bool HaEntityAllowed(string path,string entity){
+  if(path=="select/select_option")return entity=="select.felix_mode_de_nettoyage"||musicSelect.IsMatch(entity);
+  if(path=="switch/turn_on"||path=="switch/turn_off")return govSwitch.IsMatch(entity);
   if(path.StartsWith("vacuum/"))return entity=="vacuum.felix";
   if(path=="media_player/play_media"||path=="media_player/turn_on"||path=="media_player/select_source")return entity=="media_player.appletv_appletv";
   if(path=="remote/send_command")return entity=="remote.appletv_appletv";
