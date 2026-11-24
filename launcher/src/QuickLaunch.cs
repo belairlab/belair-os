@@ -529,7 +529,7 @@ public sealed class QuickLaunch : NUIApplication {
  }
  // Govee lights exist twice in Home Assistant: the cloud entity (scenes, but 4–7 s per command)
  // and the LAN entity (~20 ms). Power, brightness and colours use the LAN one; only scenes go to the cloud.
- static readonly Dictionary<string,string> lanLight=new Dictionary<string,string>{{"light.salon_neon_rope_light","light.salon_neon"},{"light.bureau_lantern_floor_lamp","light.h1630_2"}};
+ static readonly Dictionary<string,string> lanLight=new Dictionary<string,string>{{"light.salon_neon_rope_light","light.salon_neon"},{"light.bureau_lantern_floor_lamp","light.h1630_2"},{"light.uplighter_floor_lamp","light.h60b0"},{"light.tv_backlight_3_lite","light.h6099"}};
  static string LocalLight(string path,string body){
   if(!path.StartsWith("light/")||body.Contains("\"effect\""))return body;
   foreach(var kv in lanLight)body=body.Replace("\""+kv.Key+"\"","\""+kv.Value+"\"");
@@ -549,7 +549,8 @@ public sealed class QuickLaunch : NUIApplication {
  // Limited to the robot's services and to opening a link / pressing keys on the Apple TV.
  static bool HaCallAllowed(string path,JsonElement body){
   string entity=Str(body,"entity_id");
-  if(path=="select/select_option")return entity=="select.felix_mode_de_nettoyage";
+  if(path=="select/select_option")return entity=="select.felix_mode_de_nettoyage"||entity.StartsWith("select.")&&entity.EndsWith("_music_mode");
+  if(path=="switch/turn_on"||path=="switch/turn_off")return entity.StartsWith("switch.")&&new[]{"_music_mode","_dreamview","_bottom_light","_side_light","_ripple_light"}.Any(x=>entity.EndsWith(x));
   if(path.StartsWith("vacuum/"))return entity=="vacuum.felix";
   if(path=="media_player/play_media"||path=="media_player/turn_on"||path=="media_player/select_source")return entity=="media_player.appletv_appletv";
   if(path=="remote/send_command")return entity=="remote.appletv_appletv";
@@ -663,7 +664,9 @@ public sealed class QuickLaunch : NUIApplication {
     int lb=-1;if(s.TryGetProperty("attributes",out var lat)&&lat.TryGetProperty("brightness",out var lbv)&&lbv.ValueKind==JsonValueKind.Number)lb=lbv.GetInt32();lan[lid]=(lst,lb);}
    foreach(var s in doc.RootElement.EnumerateArray()){
    string id=s.GetProperty("entity_id").GetString();if(id==null)continue;
+   if(id.StartsWith("select.")&&id.EndsWith("_music_mode")){w.WriteStartObject();w.WriteString("entity",id);w.WriteString("state",Str(s,"state"));w.WriteNumber("pos",-1);w.WriteStartArray("options");if(s.TryGetProperty("attributes",out var sa)&&sa.TryGetProperty("options",out var so)&&so.ValueKind==JsonValueKind.Array)foreach(var o in so.EnumerateArray())w.WriteStringValue(o.GetString()??"");w.WriteEndArray();w.WriteEndObject();continue;}
    if(!(id.StartsWith("cover.")||id.StartsWith("light.")||id.StartsWith("switch.")||SensorWanted(id,patterns)))continue;
+   if(id.StartsWith("light.")&&id.Contains("_segment_"))continue;
    string state=s.TryGetProperty("state",out var st)?st.GetString():"";
    int pos=-1;
    if(id.StartsWith("cover.")&&s.TryGetProperty("attributes",out var at)&&at.TryGetProperty("current_position",out var cp)&&cp.ValueKind==JsonValueKind.Number)pos=cp.GetInt32();
