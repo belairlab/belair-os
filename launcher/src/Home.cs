@@ -73,6 +73,8 @@ public sealed class QuietHome : NUIApplication
  static readonly HashSet<string> goveeLamps=new HashSet<string>{"light.salon_neon_rope_light","light.bureau_lantern_floor_lamp","light.uplighter_floor_lamp","light.tv_backlight_3_lite","light.cuisine_spots"};
  // Groups driven locally (Matter) whose scenes and music mode go to each bulb through Govee's cloud entities.
  static readonly Dictionary<string,string[]> cloudMembers=new Dictionary<string,string[]>{{"light.cuisine_spots",new[]{"light.smart_led_bulb","light.smart_led_bulb_2","light.smart_led_bulb_3","light.smart_led_bulb_4"}}};
+ // The bulbs of a group, switched one by one from its panel (local Matter entities).
+ static readonly Dictionary<string,string[]> groupBulbs=new Dictionary<string,string[]>{{"light.cuisine_spots",new[]{"light.h600d","light.h600d_2","light.h600d_4","light.h600d_3"}}};
  static string EntJson(IEnumerable<string> ids){var l=ids.ToList();return l.Count==1?"\""+l[0]+"\"":"["+string.Join(",",l.Select(x=>"\""+x+"\""))+"]";}
  // "light.smart_led_bulb_2" with base "smart_led_bulb" → "select.smart_led_bulb_music_mode_2"
  static IEnumerable<string> MemberEntities(string id,string domain,string suffix){if(!cloudMembers.TryGetValue(id,out var m)){yield return domain+"."+id.Substring(id.IndexOf('.')+1)+suffix;yield break;}string b=m[0].Substring(6);foreach(var x in m)yield return domain+"."+b+suffix+x.Substring(6+b.Length);}
@@ -1555,8 +1557,8 @@ public sealed class QuietHome : NUIApplication
  static readonly string[] optionName={"DreamView","Lumière basse","Lumière latérale","Halo"};
  List<int> LightOptions(){var r=new List<int>();for(int i=0;i<optionSuffix.Length;i++)if(haLampState.ContainsKey("switch."+LightObj()+optionSuffix[i]))r.Add(i);return r;}
  static string MusicFrench(string m){switch(m){case "Rhythm":return "Rythme";case "Energic":return "Énergique";case "Spectrum":return "Spectre";case "Rolling":return "Roulement";case "Separation":return "Séparation";case "Hopping":return "Sautillant";case "Waves":return "Vagues";case "Sound Wave":return "Onde sonore";case "Shiny":return "Brillant";case "Colorful":return "Coloré";case "Day and Night":case "DayAndNight":return "Jour et nuit";case "Sprouting":return "Bourgeons";case "Stippling":return "Pointillé";case "Smudge":return "Estompé";case "Flowing Light":return "Lumière fluide";case "Luminous":return "Lumineux";case "PianoKeys":return "Piano";case "Fountain":return "Fontaine";case "DIY":return "Perso";default:return m;}}
- List<int> LightRows(){if(!goveeLamps.Contains(lightId))return new List<int>{0};var r=new List<int>{0};if(LightScenes().Length>0)r.Add(1);if(MusicModes().Length>0)r.Add(4);if(LightOptions().Count>0)r.Add(5);r.Add(3);r.Add(2);return r;}
- int LightRowLength(int row){return row==0?1+lightBriSteps.Length:row==1?LightScenes().Length:row==4?1+MusicModes().Length:row==5?LightOptions().Count:row==3?moodNames.Length:lightColorNames.Length;}
+ List<int> LightRows(){if(!goveeLamps.Contains(lightId))return new List<int>{0};var r=new List<int>{0};if(groupBulbs.ContainsKey(lightId))r.Add(6);if(LightScenes().Length>0)r.Add(1);if(MusicModes().Length>0)r.Add(4);if(LightOptions().Count>0)r.Add(5);r.Add(3);r.Add(2);return r;}
+ int LightRowLength(int row){return row==6?(groupBulbs.TryGetValue(lightId,out var gb)?gb.Length:0):row==0?1+lightBriSteps.Length:row==1?LightScenes().Length:row==4?1+MusicModes().Length:row==5?LightOptions().Count:row==3?moodNames.Length:lightColorNames.Length;}
  void BuildLightPopup()
  {
   Add(new View{Size2D=new Size2D(1920,1080),BackgroundColor=new Color(.05f,.07f,.12f,.6f)});
@@ -1568,7 +1570,7 @@ public sealed class QuietHome : NUIApplication
   panel.Add(Label(!on?"Éteinte":music?"Mode musique · "+MusicFrench(mmode):(eff!=""&&eff!="none"&&eff!="None"?"Scène "+GoveeFrench(lightId,eff):"Allumée")+(bri>=0?" · "+(int)Math.Round(bri*100/255.0)+" %":""),48,76,1000,30,21,muted,"Medium"));
   int y=128;
   foreach(int row in LightRows()){
-   string cap=row==0?"ALLUMAGE ET LUMINOSITÉ":row==1?"SCÈNES GOVEE":row==4?"MODE MUSIQUE":row==5?"OPTIONS":row==3?"AMBIANCES":"COULEURS ET BLANCS";
+   string cap=row==6?"SPOTS · UN PAR UN":row==0?"ALLUMAGE ET LUMINOSITÉ":row==1?"SCÈNES GOVEE":row==4?"MODE MUSIQUE":row==5?"OPTIONS":row==3?"AMBIANCES":"COULEURS ET BLANCS";
    panel.Add(Label(cap,48,y,600,24,16,muted,"Semibold"));
    int n=LightRowLength(row),gap=12,cw=(pw-96-(n-1)*gap)/n,ch=row==2?100:62;
    for(int i=0;i<n;i++){
@@ -1577,6 +1579,7 @@ public sealed class QuietHome : NUIApplication
      if(i==0){text=on?"Éteindre":"Allumer";act=false;}
      else{int pct=lightBriSteps[i-1];text=pct+" %";act=on&&bri>=0&&Math.Abs(bri*100/255.0-pct)<6;}
     }else if(row==1){bool gv=goveeLibs.TryGetValue(lightId,out var glb);text=gv?LightScenes()[i]:SceneName(LightScenes()[i]);act=on&&(gv?i<glb.Popular.Count&&i<goveeQuick&&eff==glb.Popular[i].En:eff==LightScenes()[i]);}
+    else if(row==6){string bulb=groupBulbs[lightId][i];bool bon=haLampState.TryGetValue(bulb,out var bs)&&bs=="on";text="Spot "+(i+1)+(bon?" · allumé":" · éteint");act=bon;}
     else if(row==4){var modes=MusicModes();if(i==0){text=music?"Arrêter":"Activer";act=music;}else{text=MusicFrench(modes[i-1]);act=music&&modes[i-1]==mmode;}}
     else if(row==5){int oi=LightOptions()[i];text=optionName[oi];act=haLampState.TryGetValue("switch."+LightObj()+optionSuffix[oi],out var os)&&os=="on";}
     else if(row==3){text=moodNames[i];act=false;}
@@ -1609,6 +1612,8 @@ public sealed class QuietHome : NUIApplication
    if(lightCol>=Math.Min(goveeQuick,glib.Popular.Count)){catalogOpen=true;catIndex=0;catSel=0;catPage=0;catOnTabs=true;BuildPage();return;}
    SendGovee(id,glib.Popular[lightCol]);BuildPage();return;
   }
+  else if(lightRow==6){string b=groupBulbs[id][lightCol];bool bon=haLampState.TryGetValue(b,out var bs)&&bs=="on";haLampState[b]=bon?"off":"on";if(!bon)haLampState[id]="on";HaCommanded(b);
+   body="{\"p\":\"light/"+(bon?"turn_off":"turn_on")+"\",\"b\":{\"entity_id\":\""+b+"\"}}";}
   else if(lightRow==4){
    string sw=MusicSwitch(),sel=MusicSelect();bool music=haLampState.TryGetValue(sw,out var ms)&&ms=="on";
    string sws=EntJson(MemberEntities(id,"switch","_music_mode")),sels=EntJson(MemberEntities(id,"select","_music_mode"));
