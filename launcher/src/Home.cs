@@ -251,7 +251,7 @@ public sealed class QuietHome : NUIApplication
   base.OnAppControlReceived(e);
   string requested="";
   e.ReceivedAppControl.ExtraData.TryGet("quiet_page",out requested);
-  if(requested!=null&&requested.StartsWith("show:"))CloseOverlays();
+  if(requested!=null&&requested.StartsWith("show:")){lastInput=DateTime.Now;CloseAmbient();CloseOverlays();}
   if(requested=="settings")OpenSettings("settings_request");
   else if(requested=="apps"){page=1;area=1;selected=0;BuildPage();}
   else if(requested!=null&&requested.StartsWith("show:news:")){ // test entry point: show:news:<section>[:<article>[:<page>]]
@@ -631,6 +631,7 @@ public sealed class QuietHome : NUIApplication
   tabs=new TextLabel[tabNav.Length];
   for(int i=0,tx=pillX+12;i<tabNav.Length;tx+=tabPillW[i]+4,i++){tabs[i]=Text(tabNav[i],tx,48,tabPillW[i],56,22,muted);tabs[i].HorizontalAlignment=HorizontalAlignment.Center;}
   if(page!=0){clock=Text(DateTime.Now.ToString("HH:mm"),1540,132,300,44,28,ink,"Semibold");clock.HorizontalAlignment=HorizontalAlignment.End;}
+  if(page!=0&&page!=5)Text(PageTitle(),96,124,1200,72,56,ink,"Display");
   if(page==0){
    // BelAir OS 2 Accueil: what is playing, big, straight on the backdrop; then the "Regarder" and "Infos" rows.
    clock=null;heroArtPath=null;
@@ -695,7 +696,7 @@ public sealed class QuietHome : NUIApplication
  void BuildForecast()
  {
   Text("Prévision du jour",80,246,760,42,30,ink,"Semibold");
-  var current=Panel(80,294,1760,126,Sf(1,1,1,.9f),24);
+  var current=Panel(80,294,1760,126,GlassFill(),24);
   var currentIcon=AddWeatherIcon(current,20,24,weatherCode);AnimateWeatherIcon(currentIcon);
   var nowTemp=Label(weatherTemperatureText,114,8,160,78,52,ink,"Semibold");nowTemp.Ellipsis=false;current.Add(nowTemp);
   current.Add(Label("Maintenant · "+weatherConditionText,265,25,680,42,27,ink,"Semibold"));
@@ -706,17 +707,17 @@ public sealed class QuietHome : NUIApplication
   Text("Par heure · température, ressenti, pluie et vent",80,432,1100,34,26,ink,"Semibold");
   if(forecastHours.Count==0){Text("Prévisions horaires indisponibles.",80,477,900,45,24,muted);}
   else{
-   int visible=Math.Min(12,forecastHours.Count-forecastHourOffset),hourCardWidth=134,hourGap=13,hourCardY=474,hourCardHeight=205;
+   int visible=Math.Min(12,forecastHours.Count-forecastHourOffset),hourCardWidth=134,hourGap=13,hourCardY=474,hourCardHeight=214;
    for(int i=0;i<visible;i++){
     var hour=forecastHours[forecastHourOffset+i];int x=80+i*(hourCardWidth+hourGap);
-    var card=Panel(x,hourCardY,hourCardWidth,hourCardHeight,Sf(1,1,1,.92f),18);
+    var card=Panel(x,hourCardY,hourCardWidth,hourCardHeight,GlassFill(),18);
     card.BorderlineWidth=area==5&&i==forecastHourFocus?4:0;card.BorderlineColor=accent;hourCards.Add(card);
     var time=Label(hour.Time,6,7,hourCardWidth-12,25,18,ink,"Semibold");time.HorizontalAlignment=HorizontalAlignment.Center;card.Add(time);
     AddWeatherIcon(card,28,31,hour.Code);
     var temperature=Label(hour.Temperature,6,107,hourCardWidth-12,34,23,ink,"Semibold");temperature.HorizontalAlignment=HorizontalAlignment.Center;temperature.Ellipsis=false;card.Add(temperature);
-    var feels=Label("Ress. "+hour.FeelsLike,4,143,hourCardWidth-8,22,15,muted);feels.HorizontalAlignment=HorizontalAlignment.Center;feels.Ellipsis=false;card.Add(feels);
-    var rain=Label("Pluie "+hour.Precipitation,4,165,hourCardWidth-8,22,15,muted);rain.HorizontalAlignment=HorizontalAlignment.Center;rain.Ellipsis=false;card.Add(rain);
-    var wind=Label("Vent "+hour.Wind+" km/h",4,185,hourCardWidth-8,22,14,muted);wind.HorizontalAlignment=HorizontalAlignment.Center;wind.Ellipsis=false;card.Add(wind);
+    var feels=Label("Ress. "+hour.FeelsLike,2,140,hourCardWidth-4,24,17,muted);feels.HorizontalAlignment=HorizontalAlignment.Center;feels.Ellipsis=false;card.Add(feels);
+    var rain=Label("Pluie "+hour.Precipitation,2,163,hourCardWidth-4,24,17,muted);rain.HorizontalAlignment=HorizontalAlignment.Center;rain.Ellipsis=false;card.Add(rain);
+    var wind=Label("Vent "+hour.Wind+" km/h",2,186,hourCardWidth-4,24,17,muted);wind.HorizontalAlignment=HorizontalAlignment.Center;wind.Ellipsis=false;card.Add(wind);
    }
   }
   Text("Prévisions sur 7 jours · aujourd’hui compris",80,707,900,36,27,ink,"Semibold");
@@ -726,7 +727,7 @@ public sealed class QuietHome : NUIApplication
    int cardY=751,cardW=236,cardH=258,gap=18;
    for(int i=0;i<Math.Min(7,forecast.Count);i++){
     var day=forecast[i];int x=80+i*(cardW+gap);
-   var card=Panel(x,cardY,cardW,cardH,Sf(1,1,1,.9f),22);dayCards.Add(card);
+   var card=Panel(x,cardY,cardW,cardH,GlassFill(),22);dayCards.Add(card);
     DateTime date;bool parsed=DateTime.TryParseExact(day.Date,"yyyy-MM-dd",CultureInfo.InvariantCulture,DateTimeStyles.None,out date);
     string dayName=i==0?"Aujourd’hui":parsed?date.ToString("ddd",culture):"Jour "+(i+1);
     string dateText=parsed?date.ToString("d MMM",culture):day.Date;
@@ -768,7 +769,7 @@ public sealed class QuietHome : NUIApplication
   int ok=0,warn=0,bad=0;var troubled=new List<string>();
   for(int i=0;i<rerCodes.Length;i++){int v=lineStatus.TryGetValue("rer/"+rerCodes[i],out var x)?x:0;if(v==0)ok++;else{if(v==1)warn++;else bad++;troubled.Add("RER "+rerCodes[i]);}}
   for(int i=0;i<metroCodes.Length;i++){int v=lineStatus.TryGetValue("metro/"+metroCodes[i],out var x)?x:0;if(v==0)ok++;else{if(v==1)warn++;else bad++;troubled.Add("M"+metroCodes[i]);}}
-  var sum=Panel(1166,240,674,286,Sf(1,1,1,.92f),26);
+  var sum=Panel(1166,240,674,286,GlassFill(),26);
   string timeStr=(linesUpdated==DateTime.MinValue?DateTime.Now:linesUpdated).ToString("HH:mm",CultureInfo.InvariantCulture);
   sum.Add(Label("RÉSEAU MÉTRO ET RER",30,24,420,26,17,muted,"Semibold"));
   var upd=Label("à "+timeStr,420,24,224,26,17,muted,"Medium");upd.HorizontalAlignment=HorizontalAlignment.End;sum.Add(upd);
@@ -787,7 +788,7 @@ public sealed class QuietHome : NUIApplication
  {
   string key=kind+"/"+label;int st=lineStatus.TryGetValue(key,out var s)?s:0;
   var fc=st>=2?new Color(.89f,.22f,.17f,1):st==1?new Color(.96f,.57f,.11f,1):new Color(.22f,.66f,.22f,1);
-  var card=Panel(x+w/2,y+h/2,w,h,st==0?Sf(1,1,1,.92f):new Color(fc.R,fc.G,fc.B,dark?.22f:.16f),20);card.PivotPoint=new Position(.5f,.5f,.5f);card.PositionUsesPivotPoint=true;
+  var card=Panel(x+w/2,y+h/2,w,h,st==0?GlassFill():new Color(fc.R,fc.G,fc.B,dark?.22f:.16f),20);card.PivotPoint=new Position(.5f,.5f,.5f);card.PositionUsesPivotPoint=true;
   card.Add(new View{Position2D=new Position2D(0,18),Size2D=new Size2D(6,h-36),BackgroundColor=fc,CornerRadius=new Vector4(3,3,3,3)});
   int bs=56,br=kind=="metro"?bs/2:12;
   card.Add(new View{Position2D=new Position2D(20,16),Size2D=new Size2D(bs,bs),CornerRadius=new Vector4(br,br,br,br),BackgroundColor=HexColor(hex)});
@@ -1412,6 +1413,7 @@ public sealed class QuietHome : NUIApplication
   {"pause","<rect x='6' y='5' width='4' height='14' rx='1.2' fill='C'/><rect x='14' y='5' width='4' height='14' rx='1.2' fill='C'/>"},
   {"bulb","<path d='M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9V16h7v-2.1A6 6 0 0 0 12 3z' fill='none' stroke='C' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'/>"},
   {"plug","<path d='M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0zM12 17v4' fill='none' stroke='C' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'/>"},
+  {"tv","<rect x='2.5' y='4.5' width='19' height='12.5' rx='2.2' fill='none' stroke='C' stroke-width='1.9'/><path d='M8.5 20.5h7' stroke='C' stroke-width='1.9' stroke-linecap='round'/><path d='M10.2 8.3v5.2l4.3-2.6z' fill='C'/>"},
   {"film","<rect x='3.5' y='5.5' width='17' height='13' rx='2' fill='none' stroke='C' stroke-width='1.9'/><path d='M8 5.5v13M16 5.5v13' stroke='C' stroke-width='1.9'/>"},
  };
  string IconFile(string name,string hex)
@@ -1801,7 +1803,8 @@ public sealed class QuietHome : NUIApplication
  {
   int x=1652+n*64,y=46,sz=60;
   var card=Panel(x+sz/2,y+sz/2,sz,sz,GlassFill(),sz/2);card.PivotPoint=new Position(.5f,.5f,.5f);card.PositionUsesPivotPoint=true;
-  card.Add(new ImageView{ResourceUrl=Root+"symbol-"+icon+".png",Color=ink,Position2D=new Position2D(16,16),Size2D=new Size2D(28,28)});
+  if(icon=="hdmi")card.Add(new ImageView{ResourceUrl=IconFile("tv",HexOf(ink)),Position2D=new Position2D(14,14),Size2D=new Size2D(32,32)});
+  else card.Add(new ImageView{ResourceUrl=Root+"symbol-"+icon+".png",Color=ink,Position2D=new Position2D(16,16),Size2D=new Size2D(28,28)});
   slots.Add(new Slot{Card=card,Name=label,Action=action,Description=label,Row=-1,X=x,Y=y,W=sz,H=sz});
  }
  // Paris (the TV's local time) and Buenos Aires (UTC-3 all year, Argentina has no daylight saving time).
@@ -2154,7 +2157,8 @@ public sealed class QuietHome : NUIApplication
  }
  List<int> Row(int row){var r=new List<int>();for(int i=0;i<slots.Count;i++)if(slots[i].Row==row)r.Add(i);return r;}
  // ---- BelAir OS 2 design tokens: one glass material, one focus language ----
- Color GlassFill(){return dark?new Color(1,1,1,.10f):prefWall==4?new Color(1f,.985f,.96f,.84f):new Color(1,1,1,.66f);}
+ string PageTitle(){return page==1?"Applis":page==2?"Réglages":page==3?"Météo":page==4?"Trafic":page==6?"Système":page==7?"Énergie":page==8?"Plex":page==9?"Félix":page==10?"Vélos":page==11?"Localiser":"";}
+ Color GlassFill(){return dark?new Color(1,1,1,.10f):prefWall==4?new Color(1f,.985f,.96f,.9f):new Color(1,1,1,.66f);}
  Color GlassEdge(){return dark?new Color(1,1,1,.20f):new Color(0,0,0,.07f);}
  Color FocusEdge(){return dark?new Color(1,1,1,.88f):accent;}
  Shadow FocusShadow(bool on){return on?new Shadow(46f,new Color(0,0,0,dark?.55f:.24f),new Vector2(0,20)):new Shadow(0f,new Color(0,0,0,0),new Vector2(0,0));}
@@ -2664,7 +2668,7 @@ public sealed class QuietHome : NUIApplication
  void AppearanceTile(string name,string action,string description,int column)
  {
   int w=276,x=80+column*(w+20),y=878,h=108;
-  var card=Panel(x+w/2,y+h/2,w,h,Sf(1,1,1,.9f),22);card.PivotPoint=new Position(.5f,.5f,.5f);card.PositionUsesPivotPoint=true;
+  var card=Panel(x+w/2,y+h/2,w,h,GlassFill(),22);card.PivotPoint=new Position(.5f,.5f,.5f);card.PositionUsesPivotPoint=true;
   card.Add(Label(name.ToUpperInvariant(),22,14,w-40,24,14,muted,"Semibold"));
   var value=Label("",22,40,w-100,52,26,ink,"Semibold");card.Add(value);
   var swatch=new View{Position2D=new Position2D(w-80,(h-52)/2),Size2D=new Size2D(52,52),CornerRadius=new Vector4(26,26,26,26)};card.Add(swatch);
@@ -2758,7 +2762,11 @@ public sealed class QuietHome : NUIApplication
    return;
   }
   string file=prefWall==1?WeatherWallFile():prefWall==3?AuroraWallFile():prefWall==4?SeventiesWallFile():"";
-  if(file!=""){Add(new ImageView{ResourceUrl=file,Size2D=new Size2D(1920,1080)});return;}
+  if(file!=""){
+   Add(new ImageView{ResourceUrl=file,Size2D=new Size2D(1920,1080)});
+   // inner pages: the artwork stays as a ghost so cards and text read cleanly over it
+   if(page!=0)Add(new View{Size2D=new Size2D(1920,1080),BackgroundColor=prefWall==4?(dark?new Color(.106f,.071f,.051f,.72f):new Color(.953f,.902f,.82f,.78f)):(dark?new Color(.03f,.04f,.07f,.55f):new Color(.97f,.97f,.98f,.6f))});
+   return;}
   Add(new ImageView{ResourceUrl=Root+"free-background.svg",Size2D=new Size2D(1920,1080)});
   if(dark)Add(new View{Size2D=new Size2D(1920,1080),BackgroundColor=new Color(.04f,.05f,.08f,.93f)});
  }
@@ -2900,12 +2908,12 @@ public sealed class QuietHome : NUIApplication
   string[] big={Kwh(total),Kwh(avg),Kwh(last.Kwh),Kwh(month)};
   string[] small={"≈ "+Eur(cost),"≈ "+Eur(cost/energyDays.Count)+" par jour",Eur(last.Eur)+" · "+(vsAvg>=0?"+":"−")+Math.Abs(vsAvg).ToString("0",frCulture)+" % vs moyenne","≈ "+Eur(monthCost)};
   for(int i=0;i<4;i++){
-   var card=Panel(80+i*446,232,422,136,Sf(1,1,1,.92f),22);
+   var card=Panel(80+i*446,232,422,136,GlassFill(),22);
    card.Add(Label(cap[i].ToUpperInvariant(),24,16,380,24,15,muted,"Semibold"));
    card.Add(Label(big[i],24,42,380,50,40,i==2?accent:ink,"Display"));
    card.Add(Label(small[i],24,96,380,26,17,muted,"Medium"));
   }
-  var chart=Panel(80,392,1760,600,Sf(1,1,1,.92f),24);
+  var chart=Panel(80,392,1760,600,GlassFill(),24);
   chart.Add(Label("Consommation quotidienne",32,20,800,34,24,ink,"Semibold"));
   var legend=Label("Moyenne "+Kwh(avg)+" · samedi et dimanche plus clairs",900,22,828,30,17,muted,"Medium");legend.HorizontalAlignment=HorizontalAlignment.End;chart.Add(legend);
   int left=40,right=1720,top=104,bottom=516,n=energyDays.Count;double scale=max>0?(bottom-top-30)/max:0;
@@ -3148,7 +3156,7 @@ public sealed class QuietHome : NUIApplication
   if(velib.Count==0)Text(mobLoaded?"Stations Vélib’ indisponibles.":"Chargement des stations…",80,300,460,50,24,muted,"Medium");
   for(int i=0;i<velib.Count&&i<4;i++){
    var st=velib[i];int x=80,y=290+i*(ch+gy);
-   var card=Panel(x+cw/2,y+ch/2,cw,ch,Sf(1,1,1,.92f),22);card.PivotPoint=new Position(.5f,.5f,.5f);card.PositionUsesPivotPoint=true;
+   var card=Panel(x+cw/2,y+ch/2,cw,ch,GlassFill(),22);card.PivotPoint=new Position(.5f,.5f,.5f);card.PositionUsesPivotPoint=true;
    var badge=new View{Position2D=new Position2D(20,18),Size2D=new Size2D(38,38),CornerRadius=new Vector4(19,19,19,19),BackgroundColor=white,BorderlineWidth=4,BorderlineColor=eC};card.Add(badge);
    var bn=Label((i+1).ToString(),0,0,38,38,19,pinInk,"Semibold");bn.HorizontalAlignment=HorizontalAlignment.Center;badge.Add(bn);
    card.Add(Label(Clip(st.Name,26),70,14,cw-140,34,23,ink,"Semibold"));
@@ -3281,7 +3289,7 @@ public sealed class QuietHome : NUIApplication
   if(focus!=null&&!panned){int ar=(int)Math.Max(18,Math.Min(260,focus.Acc*R/400));map.Add(new View{Position2D=new Position2D(cx-ar,cy-ar),Size2D=new Size2D(ar*2,ar*2),CornerRadius=new Vector4(ar,ar,ar,ar),BackgroundColor=new Color(accent.R,accent.G,accent.B,.16f),BorderlineWidth=2,BorderlineColor=new Color(accent.R,accent.G,accent.B,.6f)});}
   for(int i=0;i<items.Count;i++){
    var it=items[i];int x=80,y=290+i*(ch+gy);
-   var card=Panel(x+cw/2,y+ch/2,cw,ch,Sf(1,1,1,.92f),22);card.PivotPoint=new Position(.5f,.5f,.5f);card.PositionUsesPivotPoint=true;
+   var card=Panel(x+cw/2,y+ch/2,cw,ch,GlassFill(),22);card.PivotPoint=new Position(.5f,.5f,.5f);card.PositionUsesPivotPoint=true;
    var badge=new View{Position2D=new Position2D(18,16),Size2D=new Size2D(34,34),CornerRadius=new Vector4(17,17,17,17),BackgroundColor=white,BorderlineWidth=3.5f,BorderlineColor=accent};card.Add(badge);
    var bn=Label((i+1).ToString(),0,0,34,34,17,pinInk,"Semibold");bn.HorizontalAlignment=HorizontalAlignment.Center;badge.Add(bn);
    card.Add(Label(Clip(it.Name,24),64,12,cw-170,34,22,ink,"Semibold"));
@@ -3312,11 +3320,11 @@ public sealed class QuietHome : NUIApplication
   if(findPan){map.Add(new View{Position2D=new Position2D(cx-1,cy-22),Size2D=new Size2D(3,44),BackgroundColor=accent});map.Add(new View{Position2D=new Position2D(cx-22,cy-1),Size2D=new Size2D(44,3),BackgroundColor=accent});
    var ph=new View{Position2D=new Position2D(mw/2-260,mh-120),Size2D=new Size2D(520,46),CornerRadius=new Vector4(23,23,23,23),BackgroundColor=Sf(1,1,1,.94f)};map.Add(ph);var pt=Label("Flèches : déplacer · CH +/− : zoom · OK : terminer",0,0,520,46,18,ink,"Semibold");pt.HorizontalAlignment=HorizontalAlignment.Center;ph.Add(pt);}
   {int bx=findMapX+mw-86,by=findMapY+(focus!=null?150:20)+2*76;
-   var pb=Panel(bx+33,by+33,66,66,findPan?accent:Sf(1,1,1,.94f),33);pb.PivotPoint=new Position(.5f,.5f,.5f);pb.PositionUsesPivotPoint=true;
+   var pb=Panel(bx+33,by+33,66,66,findPan?accent:GlassFill(),33);pb.PivotPoint=new Position(.5f,.5f,.5f);pb.PositionUsesPivotPoint=true;
    foreach(var d in new[]{new[]{29,14,8,38},new[]{14,29,38,8}})pb.Add(new View{Position2D=new Position2D(d[0],d[1]),Size2D=new Size2D(d[2],d[3]),CornerRadius=new Vector4(4,4,4,4),BackgroundColor=findPan?white:ink});
    slots.Add(new Slot{Card=pb,Name="Déplacer la carte",Action="findpan",Description=findPan?"Flèches pour déplacer · OK pour terminer":"OK puis flèches pour déplacer la carte",Row=2,X=bx,Y=by,W=66,H=66});}
   for(int z=0;z<2;z++){int bx=findMapX+mw-86,by=findMapY+(focus!=null?150:20)+z*76;
-   var zb=Panel(bx+33,by+33,66,66,Sf(1,1,1,.94f),33);zb.PivotPoint=new Position(.5f,.5f,.5f);zb.PositionUsesPivotPoint=true;
+   var zb=Panel(bx+33,by+33,66,66,GlassFill(),33);zb.PivotPoint=new Position(.5f,.5f,.5f);zb.PositionUsesPivotPoint=true;
    var zl=Label(z==0?"+":"−",0,0,66,62,38,ink,"Semibold");zl.HorizontalAlignment=HorizontalAlignment.Center;zb.Add(zl);
    slots.Add(new Slot{Card=zb,Name=z==0?"Zoom avant":"Zoom arrière",Action=z==0?"findzoom:in":"findzoom:out",Description="Zoom de la carte · CH +/− sur la télécommande",Row=z,X=bx,Y=by,W=66,H=66});}
   if(ringAsk!="")BuildRingConfirm();
@@ -3342,7 +3350,7 @@ public sealed class QuietHome : NUIApplication
   if(pinMsg!="")Text(pinMsg,0,400,1920,32,21,new Color(.89f,.22f,.17f,1),"Semibold").HorizontalAlignment=HorizontalAlignment.Center;
   string[] keys={"1","2","3","4","5","6","7","8","9","del","0","back"};int kw=150,kh=96,g=16,x0=960-(3*kw+2*g)/2,y0=448;
   for(int i=0;i<12;i++){int col=i%3,row=i/3,x=x0+col*(kw+g),y=y0+row*(kh+g);
-   var card=Panel(x+kw/2,y+kh/2,kw,kh,Sf(1,1,1,.92f),22);card.PivotPoint=new Position(.5f,.5f,.5f);card.PositionUsesPivotPoint=true;
+   var card=Panel(x+kw/2,y+kh/2,kw,kh,GlassFill(),22);card.PivotPoint=new Position(.5f,.5f,.5f);card.PositionUsesPivotPoint=true;
    string lab=keys[i]=="del"?"Effacer":keys[i]=="back"?"Annuler":keys[i];
    var l=Label(lab,0,0,kw,kh,keys[i].Length==1?40:22,ink,keys[i].Length==1?"Display":"Semibold");l.HorizontalAlignment=HorizontalAlignment.Center;card.Add(l);
    slots.Add(new Slot{Card=card,Name="",Action="pin:"+keys[i],Description="Chiffres de la télécommande ou flèches + OK",Row=row,X=x,Y=y,W=kw,H=kh});}
@@ -3519,7 +3527,7 @@ public sealed class QuietHome : NUIApplication
   map.Add(Label("CARTE"+(FelixBusy()&&room!=""&&room!="unknown"?" · "+room.ToUpperInvariant():""),24,16,700,30,17,new Color(1,1,1,.7f),"Semibold"));
   var upd=Label(felixStamp!=""?"Mise à jour "+WhenText(felixStamp):"",mw-524,16,500,30,16,new Color(1,1,1,.55f),"Medium");upd.HorizontalAlignment=HorizontalAlignment.End;map.Add(upd);
   int rx=1236,rw=604;
-  var status=Panel(rx,my,rw,204,Sf(1,1,1,.92f),24);
+  var status=Panel(rx,my,rw,204,GlassFill(),24);
   string vac=Fx("vacuum.felix"),etat=Fx("sensor.felix_etat");if(etat==""||etat=="unknown")etat=vac;
   status.Add(Label("ÉTAT",26,16,300,24,15,muted,"Semibold"));
   status.Add(Label(FelixText(etat),26,40,560,52,38,ink,"Display"));
@@ -3535,11 +3543,11 @@ public sealed class QuietHome : NUIApplication
   int bw=(rw-2*14)/3;
   for(int i=0;i<3;i++){
    int x=rx+i*(bw+14),y=474;
-   var b=Panel(x+bw/2,y+36,bw,72,i==0?accent:Sf(1,1,1,.92f),18);b.PivotPoint=new Position(.5f,.5f,.5f);b.PositionUsesPivotPoint=true;
+   var b=Panel(x+bw/2,y+36,bw,72,i==0?accent:GlassFill(),18);b.PivotPoint=new Position(.5f,.5f,.5f);b.PositionUsesPivotPoint=true;
    var t=Label(labels[i],0,0,bw,72,23,i==0?white:ink,"Semibold");t.HorizontalAlignment=HorizontalAlignment.Center;b.Add(t);
    slots.Add(new Slot{Card=b,Name="Félix · "+labels[i],Action=i==0?"felix_clean":"ha_vac:"+services[i],Description=descs[i],Row=0,X=x,Y=y,W=bw,H=72});
   }
-  var care=Panel(rx,566,rw,320,Sf(1,1,1,.92f),24);
+  var care=Panel(rx,566,rw,320,GlassFill(),24);
   care.Add(Label("ENTRETIEN",26,16,300,24,15,muted,"Semibold"));
   string[][] parts={new[]{"sensor.felix_temps_restant_brosse_principale","Brosse principale","300"},new[]{"sensor.felix_temps_restant_brosse_laterale","Brosse latérale","200"},new[]{"sensor.felix_temps_restant_filtre","Filtre","150"},new[]{"sensor.felix_temps_restant_capteurs","Capteurs","30"}};
   for(int i=0;i<parts.Length;i++){
@@ -3563,7 +3571,7 @@ public sealed class QuietHome : NUIApplication
    int gap=14,cwid=(1760-(count-1)*gap)/count;
    for(int i=0;i<count;i++){
     int x=80+i*(cwid+gap),y=908;
-    var chip=Panel(x+cwid/2,y+31,cwid,62,Sf(1,1,1,.92f),31);chip.PivotPoint=new Position(.5f,.5f,.5f);chip.PositionUsesPivotPoint=true;
+    var chip=Panel(x+cwid/2,y+31,cwid,62,GlassFill(),31);chip.PivotPoint=new Position(.5f,.5f,.5f);chip.PositionUsesPivotPoint=true;
     var t=Label(felixButtons[i][1],10,0,cwid-20,62,19,ink,"Semibold");t.HorizontalAlignment=HorizontalAlignment.Center;chip.Add(t);
     slots.Add(new Slot{Card=chip,Name=felixButtons[i][1],Action="ha_btn:"+felixButtons[i][0],Description="Programme Roborock · OK pour lancer",Row=1,X=x,Y=y,W=cwid,H=62});
    }
