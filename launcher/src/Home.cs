@@ -1748,7 +1748,9 @@ public sealed class QuietHome : NUIApplication
     body.Add(Label("Luminosité",shPad,y,400,30,22,muted,"Medium"));
     var vl=Label((fb?"OK pour ":"")+shown+" %",shPad,y,inner,30,22,fb?ink:muted,fb?"Semibold":"Medium");vl.HorizontalAlignment=HorizontalAlignment.End;body.Add(vl);
     var track=new View{Position2D=new Position2D(shPad,y+42),Size2D=new Size2D(inner,64),CornerRadius=new Vector4(32,32,32,32),BackgroundColor=dark?new Color(1,1,1,.14f):new Color(0,0,0,.07f),ClippingMode=ClippingModeType.ClipChildren};body.Add(track);
-    track.Add(new View{Size2D=new Size2D(inner*Math.Max(0,Math.Min(100,shown))/100,64),BackgroundColor=dark?new Color(1,1,1,.88f):accent});
+    // the fill carries its own rounded ends: clipping to the bar's rounded corners is not reliable on the TV
+    int fw=inner*Math.Max(0,Math.Min(100,shown))/100;if(fw>0)fw=Math.Max(fw,64);
+    if(fw>0)track.Add(new View{Size2D=new Size2D(fw,64),BackgroundColor=dark?new Color(1,1,1,.88f):accent,CornerRadius=new Vector4(32,32,32,32)});
     for(int k=1;k<lightBriSteps.Length;k++)track.Add(new View{Position2D=new Position2D(inner*k/lightBriSteps.Length,20),Size2D=new Size2D(2,24),BackgroundColor=dark?new Color(1,1,1,.18f):new Color(0,0,0,.10f)});
     FocusRing(track,fb,32);
     int seg=inner/lightBriSteps.Length;for(int k=0;k<lightBriSteps.Length;k++)Track(0,shPad+k*seg,y+42,seg,64,fb&&lightCol==k+1);
