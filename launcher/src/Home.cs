@@ -57,6 +57,8 @@ public sealed class QuietHome : NUIApplication
  static readonly string[] tabNav={"Accueil","Applis","Plex","Maison","Félix","Vélos","Localiser","Énergie","Système","Réglages"};
  static readonly int[] tabPage={0,1,8,5,9,10,11,7,6,2};
  static readonly int[] tabWidth={146,120,96,140,104,116,150,150,158,170};
+ // tab pill widths for the glass tab bar (22 px labels)
+ static readonly int[] tabPillW={126,110,86,122,98,100,136,124,132,134};
  static readonly string[] haSceneId={"scene.bonjour","scene.bonne_nuit","scene.film","scene.pause"};
  static readonly string[] haSceneName={"Bonjour","Bonne nuit","Film","Pause"};
  static readonly string[] haSceneIcon={"bonjour","bonnenuit","film","pause"};
@@ -621,14 +623,13 @@ public sealed class QuietHome : NUIApplication
   ParkArtwork();pageArtworkCold=0;
   foreach(var v in scene){Window.Default.Remove(v);v.Dispose();}scene.Clear();slots.Clear();homeSensorValue=null;weatherRain=null;metroFoot=null;weatherGlyphs.Clear();weatherCard=null;weatherIcon=null;weatherSlotIndex=-1;metroCard=null;metroSlotIndex=-1;marketSlotIndex=-1;factSlotIndex=-1;newsButtonSlotIndex=-1;newsCategorySlotStart=-1;newsArticleSlotStart=-1;newsTopTitle=null;marketHeadline=null;marketValue=null;marketChange=null;marketTime=null;marketSub=null;marketChartHost=null;cinemaState=null;felixState=null;cinemaCard=null;cinemaDot=null;factBody=null;metroStatus=null;metroNationTime=null;metroEtoileTime=null;weatherPlace=null;weatherTemperature=null;weatherCondition=null;weatherRange=null;heroTop=null;heroTitle=null;heroSub=null;heroTime=null;heroArt=null;heroBar=null;heroFill=null;heroArtPath="";worldParis=null;worldBa=null;
   AddWallpaper();
-  var brandMark=Panel(80,22,27,27,accent,8);var brandLetter=Label("B",0,0,27,27,17,white,"Semibold");brandLetter.HorizontalAlignment=HorizontalAlignment.Center;brandMark.Add(brandLetter);
-  Text("BelAir OS",118,20,150,31,19,muted,"Semibold");
-  Text("Build "+BuildTag,234,24,250,27,15,Tx(.56f,.6f,.66f,1),"Medium");
-  string title=page==0?"Accueil":page==1?"Mes applications":page==2?"Réglages rapides":page==3?"Météo · Paris 12e":page==4?"Information trafic":page==6?"Informations TV":page==7?"Électricité":page==8?"Plex":page==9?"Félix":page==10?"Vélos":page==11?"Localiser":"Maison";
-  Text(title,76,55,page==0?1050:1350,100,76,ink,"Display");
+  // Header (BelAir OS 2): brand mark, one floating glass tab bar in the middle, round glass buttons on the right.
+  var brandMark=Panel(96,52,52,52,accent,16);var brandLetter=Label("B",0,0,52,52,28,white,"Semibold");brandLetter.HorizontalAlignment=HorizontalAlignment.Center;brandMark.Add(brandLetter);
+  int pillW=12;for(int i=0;i<tabNav.Length;i++)pillW+=tabPillW[i]+(i>0?4:0);pillW+=12;int pillX=(1920-pillW)/2;
+  var pill=Panel(pillX,42,pillW,68,GlassFill(),34);pill.BorderlineWidth=1;pill.BorderlineColor=GlassEdge();
   tabs=new TextLabel[tabNav.Length];
-  for(int i=0,tx=54;i<tabNav.Length;tx+=tabWidth[i]+6,i++){tabs[i]=Text(tabNav[i],tx,158,tabWidth[i],68,30,muted);tabs[i].HorizontalAlignment=HorizontalAlignment.Center;}
-  if(page!=0){clock=Text(DateTime.Now.ToString("HH:mm"),1540,170,300,45,24,muted);clock.HorizontalAlignment=HorizontalAlignment.End;}
+  for(int i=0,tx=pillX+12;i<tabNav.Length;tx+=tabPillW[i]+4,i++){tabs[i]=Text(tabNav[i],tx,48,tabPillW[i],56,22,muted);tabs[i].HorizontalAlignment=HorizontalAlignment.Center;}
+  if(page!=0){clock=Text(DateTime.Now.ToString("HH:mm"),1540,132,300,44,28,ink,"Semibold");clock.HorizontalAlignment=HorizontalAlignment.End;}
   if(page==0){
    var hero=Feature("Apple TV","hdmi:13","Appareil externe · HDMI 1","hero-apple-tv.svg",80,262,700,442,"hero");
    heroArt=new View{Position2D=new Position2D(422,82),Size2D=new Size2D(246,170),CornerRadius=new Vector4(9,9,9,9)};hero.Card.Add(heroArt);
@@ -1765,17 +1766,16 @@ public sealed class QuietHome : NUIApplication
  }
  void Toolbar(string label,string action,string icon,int n)
  {
-  int x=1596+n*88;
-  var card=Panel(x+34,103,68,68,new Color(0,0,0,0),34);card.PivotPoint=new Position(.5f,.5f,.5f);card.PositionUsesPivotPoint=true;
-  card.Add(new ImageView{ResourceUrl=Root+"glass-button.svg",Position2D=new Position2D(-16,-16),Size2D=new Size2D(100,112),Opacity=dark?.22f:1f});
-  card.Add(new ImageView{ResourceUrl=Root+"symbol-"+icon+".png",Color=ink,Position2D=new Position2D(19,19),Size2D=new Size2D(30,30)});
-  slots.Add(new Slot{Card=card,Name=label,Action=action,Description=label,Row=-1,X=x,Y=69,W=68,H=68});
+  int x=1652+n*64,y=46,sz=60;
+  var card=Panel(x+sz/2,y+sz/2,sz,sz,GlassFill(),sz/2);card.PivotPoint=new Position(.5f,.5f,.5f);card.PositionUsesPivotPoint=true;
+  card.Add(new ImageView{ResourceUrl=Root+"symbol-"+icon+".png",Color=ink,Position2D=new Position2D(16,16),Size2D=new Size2D(28,28)});
+  slots.Add(new Slot{Card=card,Name=label,Action=action,Description=label,Row=-1,X=x,Y=y,W=sz,H=sz});
  }
  // Paris (the TV's local time) and Buenos Aires (UTC-3 all year, Argentina has no daylight saving time).
  void WorldClock()
  {
-  int x=1124,y=80,w=440,h=64;
-  var card=Panel(x,y,w,h,Sf(1,1,1,.78f),32);
+  int x=1400,y=128,w=440,h=60;
+  var card=Panel(x,y,w,h,GlassFill(),30);card.BorderlineWidth=1;card.BorderlineColor=GlassEdge();
   card.Add(Label("PARIS",28,0,90,h,15,muted,"Semibold"));
   worldParis=Label("",96,0,110,h,26,ink,"Semibold");card.Add(worldParis);
   card.Add(new View{Position2D=new Position2D(w/2-1,16),Size2D=new Size2D(2,h-32),BackgroundColor=Sf(.85f,.86f,.9f,1)});
@@ -1791,8 +1791,8 @@ public sealed class QuietHome : NUIApplication
  }
  void NewsDropdownButton()
  {
-  int x=690,y=80,w=410,h=64;
-  var card=Panel(x+w/2,y+h/2,w,h,Sf(1,1,1,.78f),32);card.PivotPoint=new Position(.5f,.5f,.5f);card.PositionUsesPivotPoint=true;
+  int x=96,y=128,w=410,h=60;
+  var card=Panel(x+w/2,y+h/2,w,h,GlassFill(),30);card.PivotPoint=new Position(.5f,.5f,.5f);card.PositionUsesPivotPoint=true;
   newsTopTitle=Label(NewsButtonText(),18,0,w-36,h,20,ink,"Semibold");newsTopTitle.HorizontalAlignment=HorizontalAlignment.Center;card.Add(newsTopTitle);
   newsButtonSlotIndex=slots.Count;
   slots.Add(new Slot{Card=card,Label=newsTopTitle,Name="Actualités",Action="news",Description="Paris · France · Monde · Bourse",Row=-1,X=x,Y=y,W=w,H=h});
@@ -2120,18 +2120,29 @@ public sealed class QuietHome : NUIApplication
   return true;
  }
  List<int> Row(int row){var r=new List<int>();for(int i=0;i<slots.Count;i++)if(slots[i].Row==row)r.Add(i);return r;}
+ // ---- BelAir OS 2 design tokens: one glass material, one focus language ----
+ Color GlassFill(){return dark?new Color(1,1,1,.10f):new Color(1,1,1,.66f);}
+ Color GlassEdge(){return dark?new Color(1,1,1,.20f):new Color(0,0,0,.07f);}
+ Color FocusEdge(){return dark?new Color(1,1,1,.88f):accent;}
+ Shadow FocusShadow(bool on){return on?new Shadow(46f,new Color(0,0,0,dark?.55f:.24f),new Vector2(0,20)):new Shadow(0f,new Color(0,0,0,0),new Vector2(0,0));}
  void UpdateFocus(bool animate=true)
  {
   if(focusAnimation!=null){focusAnimation.Stop();focusAnimation.Dispose();focusAnimation=null;}
   if(animate)focusAnimation=new Animation(180);
-  for(int i=0;i<tabs.Length;i++){bool act=tabPage[i]==page;tabs[i].TextColor=act?ink:muted;tabs[i].FontFamily="Quiet Inter "+(act?"Semibold":"Medium");tabs[i].BackgroundColor=area==0&&act?(dark?new Color(1,1,1,.14f):new Color(1,1,1,.7f)):new Color(0,0,0,0);tabs[i].CornerRadius=new Vector4(34,34,34,34);}
+  // tab bar: the current page is a soft capsule; while the bar has focus it turns into a solid capsule (white in dark, accent in light)
+  for(int i=0;i<tabs.Length;i++){bool act=tabPage[i]==page,hot=act&&area==0;
+   tabs[i].TextColor=hot?(dark?new Color(.04f,.06f,.10f,1):white):act?ink:muted;tabs[i].FontFamily="Quiet Inter "+(act?"Semibold":"Medium");
+   tabs[i].BackgroundColor=hot?(dark?white:accent):act?(dark?new Color(1,1,1,.16f):new Color(0,0,0,.07f)):new Color(0,0,0,0);tabs[i].CornerRadius=new Vector4(28,28,28,28);}
   for(int i=0;i<slots.Count;i++){
    var s=slots[i];bool newsControl=s.Action.StartsWith("news_category:")||s.Action.StartsWith("news_item:")||s.Action.StartsWith("quote:");
    // PIN pad: focus is shown only on its starting key (1), so you know where you are but nobody can follow the code.
    bool f=factDetailOpen?false:page==11&&!findUnlocked?selected==i&&slots[i].Action=="pin:1":page==3?area==3&&selected==i:newsMenuOpen?newsControl&&area!=9&&!quoteDetailOpen&&selected==i:area!=0&&area!=9&&selected==i;
    float scale=f?(page==8||page==9||page==10||page==11?(s.H>120?1.06f:1.05f):page==2&&s.Row==2?1.04f:page==5||page==4?1.05f:s.Action=="news"?1.035f:newsControl?1.015f:page==1&&s.Row>=0?1.055f:page==2&&s.Row>=0?1.035f:s.Row==0?1.05f:s.Row==1?(page==0?1.14f:1.03f):s.Row==-2?1.025f:s.Row==-1?1.18f:1):1;
-   s.Card.BorderlineWidth=page==8||page==9||page==10||page==11||page==2&&s.Row==2?(f?4:0):page==5||page==4?(f?3:0):s.Action=="news"?(f?3:0):newsControl?(f?4:0):s.Row==1?(f?3:0):page==1&&s.Row>=0?(f?4:1):s.Row==-2?(f?4:0):s.Row==-1?(f?4:0):s.Row==0?1:0;
-   s.Card.BorderlineColor=(page==1||page==4||page==5||page==8||page==9||page==10||page==11||page==2&&s.Row==2||s.Row==-1||newsControl)&&f?accent:new Color(1,1,1,f?.8f:.28f);
+   // focus = lift (scale + soft shadow) and a thin light edge, never a thick coloured outline
+   bool edgeAtRest=page==1&&s.Row>=0||s.Row==0&&page==0||s.Row==-1;
+   s.Card.BorderlineWidth=f?2.5f:edgeAtRest?1:0;
+   s.Card.BorderlineColor=f?FocusEdge():GlassEdge();
+   s.Card.BoxShadow=FocusShadow(f);
    var pos=new Position(s.X+s.W/2f,s.Y+s.H/2f-(f&&(s.Row==0||(page==1||page==8)&&s.Row>=0)?5:0),0);
    if(animate){focusAnimation.AnimateTo(s.Card,"Scale",new Vector3(scale,scale,1));focusAnimation.AnimateTo(s.Card,"Position",pos);}else{s.Card.Scale=new Vector3(scale,scale,1);s.Card.Position=pos;}
    if(s.Shadow!=null)s.Shadow.Opacity=f?1:.55f;

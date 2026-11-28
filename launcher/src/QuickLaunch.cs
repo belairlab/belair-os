@@ -260,6 +260,8 @@ public sealed class QuickLaunch : NUIApplication {
  // ---- Localiser: every tracked device with a position (iCloud, companion app), relative to home ----
  const string findTemplate="{% set ns=namespace(o=[]) %}{% for s in states.device_tracker if s.attributes.latitude is defined and s.attributes.longitude is defined %}{% set d=device_id(s.entity_id) %}{% set ents=device_entities(d) if d else [] %}{% set snd=ents|select('search','play_sound')|first|default('') %}{% set loc=ents|select('search','last_located')|first|default('') %}{% set ns.o=ns.o+[{'id':s.entity_id,'name':s.name,'lat':s.attributes.latitude,'lon':s.attributes.longitude,'bat':s.attributes.battery|default(-1),'bs':s.attributes.battery_status|default(''),'model':s.attributes.device_name|default(''),'state':s.state,'zone':(state_attr('zone.'~s.state,'friendly_name') or ''),'acc':s.attributes.gps_accuracy|default(0),'sound':snd,'located':(states(loc) if loc else s.last_updated|string)}] %}{% endfor %}{{ ns.o|tojson }}";
  static readonly System.Collections.Concurrent.ConcurrentDictionary<string,double[]> findPos=new System.Collections.Concurrent.ConcurrentDictionary<string,double[]>();
+ // Rounded temperature without the "-0" that .NET prints for values just below zero.
+ static double R0(double v){var r=Math.Round(v);return r==0?0:r;}
  // Web Mercator "world" coordinates (0..256 at zoom 0): exact positions at any scale, from the street to the whole world.
  static double[] Merc(double lat,double lon){double r=lat*Math.PI/180;return new[]{(lon+180)/360*256,(1-Math.Log(Math.Tan(r)+1/Math.Cos(r))/Math.PI)/2*256};}
  static string FetchFindJson(){
@@ -769,8 +771,8 @@ public sealed class QuickLaunch : NUIApplication {
       result.Hours.Add(new WeatherHour{
        Time=time.ToString("HH:mm",CultureInfo.InvariantCulture),
        Day=time.ToString("yyyy-MM-dd",CultureInfo.InvariantCulture),
-       Temperature=Math.Round(hourTemps[i].GetDouble()).ToString(format,culture)+"°",
-       FeelsLike=Math.Round(hourFeels[i].GetDouble()).ToString(format,culture)+"°",
+       Temperature=R0(hourTemps[i].GetDouble()).ToString(format,culture)+"°",
+       FeelsLike=R0(hourFeels[i].GetDouble()).ToString(format,culture)+"°",
        Precipitation=Math.Round(hourRain[i].GetDouble()).ToString(format,culture)+"%",
        Wind=Math.Round(hourWind[i].GetDouble()).ToString(format,culture),
        Code=hourCodes[i].GetInt32()
@@ -778,16 +780,16 @@ public sealed class QuickLaunch : NUIApplication {
      }
      var dates=daily.GetProperty("time");var codes=daily.GetProperty("weather_code");var highs=daily.GetProperty("temperature_2m_max");var lows=daily.GetProperty("temperature_2m_min");
      double high=highs[0].GetDouble();double low=lows[0].GetDouble();
-     result.Temperature=Math.Round(temperature).ToString(format,culture)+"°";
+     result.Temperature=R0(temperature).ToString(format,culture)+"°";
      result.Condition=WeatherDescription(result.Code);
-     result.High=Math.Round(high).ToString(format,culture)+"°";
-     result.Low=Math.Round(low).ToString(format,culture)+"°";
+     result.High=R0(high).ToString(format,culture)+"°";
+     result.Low=R0(low).ToString(format,culture)+"°";
      for(int i=0;i<Math.Min(7,dates.GetArrayLength());i++){
       int code=codes[i].GetInt32();
       result.Days.Add(new WeatherDay{
        Date=dates[i].GetString()??"",Code=code,
-       High=Math.Round(highs[i].GetDouble()).ToString(format,culture)+"°",
-       Low=Math.Round(lows[i].GetDouble()).ToString(format,culture)+"°",
+       High=R0(highs[i].GetDouble()).ToString(format,culture)+"°",
+       Low=R0(lows[i].GetDouble()).ToString(format,culture)+"°",
        Condition=WeatherDescription(code)
       });
      }
@@ -810,7 +812,7 @@ public sealed class QuickLaunch : NUIApplication {
     DateTime localNow=DateTime.Now;
     var inst0=series[0].GetProperty("data").GetProperty("instant").GetProperty("details");
     result.Code=MetNoCode(MetNoSymbol(series[0]));result.Condition=WeatherDescription(result.Code);
-    result.Temperature=Math.Round(inst0.GetProperty("air_temperature").GetDouble()).ToString(fmt,culture)+"°";
+    result.Temperature=R0(inst0.GetProperty("air_temperature").GetDouble()).ToString(fmt,culture)+"°";
     var dayMin=new Dictionary<string,double>();var dayMax=new Dictionary<string,double>();var dayCode=new Dictionary<string,int>();var dayOrder=new List<string>();
     for(int i=0;i<series.GetArrayLength();i++){
      var el=series[i];DateTime t;
@@ -822,14 +824,14 @@ public sealed class QuickLaunch : NUIApplication {
      int code=MetNoCode(MetNoSymbol(el));
      if(t.AddHours(1)>localNow&&result.Hours.Count<96)result.Hours.Add(new WeatherHour{
       Time=t.ToString("HH:mm",CultureInfo.InvariantCulture),Day=t.ToString("yyyy-MM-dd",CultureInfo.InvariantCulture),
-      Temperature=Math.Round(temp).ToString(fmt,culture)+"°",FeelsLike=Math.Round(temp).ToString(fmt,culture)+"°",
+      Temperature=R0(temp).ToString(fmt,culture)+"°",FeelsLike=R0(temp).ToString(fmt,culture)+"°",
       Precipitation=MetNoPrecipPct(MetNoPrecip(el)),Wind=Math.Round(wind).ToString(fmt,culture),Code=code});
      string day=t.ToString("yyyy-MM-dd",CultureInfo.InvariantCulture);
      if(!dayMin.ContainsKey(day)){dayMin[day]=temp;dayMax[day]=temp;dayOrder.Add(day);}else{if(temp<dayMin[day])dayMin[day]=temp;if(temp>dayMax[day])dayMax[day]=temp;}
      if(t.Hour>=12&&t.Hour<=14||!dayCode.ContainsKey(day))dayCode[day]=code;
     }
     foreach(var day in dayOrder){if(result.Days.Count>=7)break;int code=dayCode.TryGetValue(day,out var cc)?cc:result.Code;
-     result.Days.Add(new WeatherDay{Date=day,Code=code,High=Math.Round(dayMax[day]).ToString(fmt,culture)+"°",Low=Math.Round(dayMin[day]).ToString(fmt,culture)+"°",Condition=WeatherDescription(code)});}
+     result.Days.Add(new WeatherDay{Date=day,Code=code,High=R0(dayMax[day]).ToString(fmt,culture)+"°",Low=R0(dayMin[day]).ToString(fmt,culture)+"°",Condition=WeatherDescription(code)});}
     if(result.Days.Count>0){result.High=result.Days[0].High;result.Low=result.Days[0].Low;}
    }
    return result.Days.Count>0?result:null;
