@@ -565,10 +565,28 @@ public sealed class QuickLaunch : NUIApplication {
   if(path=="button/press")return entity.StartsWith("button.")&&entity.EndsWith("_play_sound");
   return false;
  }
+ // Raw Govee frames are limited to the known ones: the TV backlight's camera video mode (part of the screen, Cinéma),
+ // read back from the light itself after setting it in the Govee app.
+ static readonly HashSet<string> goveeFrames=new HashSet<string>{"33 05 00 00 08 22 00 02 32"};
+ static readonly Dictionary<string,string> goveeDeviceIds=new Dictionary<string,string>();
+ static string GoveeDeviceId(string entity){
+  lock(goveeDeviceIds){if(goveeDeviceIds.TryGetValue(entity,out var d))return d;}
+  string r=HaPostJson("/api/template","{\"template\":\"{{ device_id('"+entity+"') }}\"}");string id=(r??"").Trim();
+  if(!Regex.IsMatch(id,"^[0-9a-f]{32}$"))return null;
+  lock(goveeDeviceIds)goveeDeviceIds[entity]=id;return id;
+ }
  static bool HaCalls(string json){
   bool all=true;
   try{using(var doc=JsonDocument.Parse(json)){int n=0;foreach(var call in doc.RootElement.EnumerateArray()){
    string path=Str(call,"p");var body=call.GetProperty("b");
+   if(path=="govee/send_raw_ptreal"){
+    string ent=Str(body,"entity_id"),frame=Str(body,"frame");
+    if(!Regex.IsMatch(ent,"^light\\.[a-z0-9_]+$")||!goveeFrames.Contains(frame)){all=false;continue;}
+    string dev=GoveeDeviceId(ent);if(dev==null){all=false;continue;}
+    int pw=call.TryGetProperty("w",out var pwv)&&pwv.ValueKind==JsonValueKind.Number?pwv.GetInt32():0;if(pw>0)System.Threading.Thread.Sleep(Math.Min(pw,15000));n++;
+    lock(actLock){if(!HaPost("/api/services/govee/send_raw_ptreal","{\"device_id\":\""+dev+"\",\"frame\":\""+frame+"\"}"))all=false;}
+    continue;
+   }
    if(!HaCallAllowed(path,body)){all=false;continue;}
    int wait=call.TryGetProperty("w",out var w)&&w.ValueKind==JsonValueKind.Number?w.GetInt32():(n>0?1500:0);n++;
    if(wait>0)System.Threading.Thread.Sleep(Math.Min(wait,15000));

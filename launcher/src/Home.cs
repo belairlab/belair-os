@@ -1561,6 +1561,7 @@ public sealed class QuietHome : NUIApplication
   if(groupBulbs.TryGetValue(id,out var gb)){int n=gb.Count(x=>haLampState.TryGetValue(x,out var s)&&s=="on");return n+" sur "+gb.Length+(bri!=""?" · "+bri:"");}
   string sw=MemberEntities(id,"switch","_music_mode").First();
   if(haLampState.TryGetValue(sw,out var ms)&&ms=="on"){string sel=MemberEntities(id,"select","_music_mode").First();return "Musique"+(haSensor.TryGetValue(sel,out var mm)&&mm!=""?" · "+MusicFrench(mm):"");}
+  if(haLampState.TryGetValue(MemberEntities(id,"switch","_dreamview").First(),out var dv)&&dv=="on")return id==backlightId?"Vidéo · Cinéma":"DreamView";
   string eff=lightEffect.TryGetValue(id,out var e)?e:"";
   if(eff!=""&&eff!="none"&&eff!="None")return "Scène "+GoveeFrench(id,eff);
   return bri!=""?bri:"Allumée";
@@ -1707,14 +1708,17 @@ public sealed class QuietHome : NUIApplication
  string MusicSelect(){return MemberEntities(lightId,"select","_music_mode").First();}
  string MusicSwitch(){return MemberEntities(lightId,"switch","_music_mode").First();}
  string[] MusicModes(){return selectOptions.TryGetValue(MusicSelect(),out var o)?o.Take(10).ToArray():new string[0];}
+ // camera video sync (part of the screen, Cinéma), as set in the Govee app; the integration reports it as DreamView
+ const string videoFrame="33 05 00 00 08 22 00 02 32";
+ bool VideoSyncOn(){return haLampState.TryGetValue(MemberEntities(lightId,"switch","_dreamview").First(),out var v)&&v=="on";}
  string SnapshotSelect(){return MemberEntities(lightId,"select","_snapshot").First();}
  string[] Snapshots(){return selectOptions.TryGetValue(SnapshotSelect(),out var o)?o.Where(x=>x!=""&&x!="unknown"&&x!="None").Take(12).ToArray():new string[0];}
  static readonly string[] optionSuffix={"_dreamview","_bottom_light","_side_light","_ripple_light"};
  static readonly string[] optionName={"DreamView","Lumière basse","Lumière latérale","Halo"};
  List<int> LightOptions(){var r=new List<int>();for(int i=0;i<optionSuffix.Length;i++)if(haLampState.ContainsKey("switch."+LightObj()+optionSuffix[i]))r.Add(i);return r;}
  static string MusicFrench(string m){switch(m){case "Rhythm":return "Rythme";case "Energic":return "Énergique";case "Spectrum":return "Spectre";case "Rolling":return "Roulement";case "Separation":return "Séparation";case "Hopping":return "Sautillant";case "Waves":return "Vagues";case "Sound Wave":return "Onde sonore";case "Shiny":return "Brillant";case "Colorful":return "Coloré";case "Day and Night":case "DayAndNight":return "Jour et nuit";case "Sprouting":return "Bourgeons";case "Stippling":return "Pointillé";case "Smudge":return "Estompé";case "Flowing Light":return "Lumière fluide";case "Luminous":return "Lumineux";case "PianoKeys":return "Piano";case "Fountain":return "Fontaine";case "DIY":return "Perso";default:return m;}}
- List<int> LightRows(){if(!goveeLamps.Contains(lightId))return new List<int>{0};var r=new List<int>{0};if(Snapshots().Length>0)r.Add(7);if(groupBulbs.ContainsKey(lightId))r.Add(6);if(LightScenes().Length>0)r.Add(1);if(MusicModes().Length>0)r.Add(4);if(LightOptions().Count>0)r.Add(5);r.Add(3);r.Add(2);return r;}
- int LightRowLength(int row){return row==7?Snapshots().Length:row==6?(groupBulbs.TryGetValue(lightId,out var gb)?gb.Length:0):row==0?1+lightBriSteps.Length:row==1?LightScenes().Length:row==4?1+MusicModes().Length:row==5?LightOptions().Count:row==3?moodNames.Length:lightColorNames.Length;}
+ List<int> LightRows(){if(!goveeLamps.Contains(lightId))return new List<int>{0};var r=new List<int>{0};if(lightId==backlightId)r.Add(8);if(Snapshots().Length>0)r.Add(7);if(groupBulbs.ContainsKey(lightId))r.Add(6);if(LightScenes().Length>0)r.Add(1);if(MusicModes().Length>0)r.Add(4);if(LightOptions().Count>0)r.Add(5);r.Add(3);r.Add(2);return r;}
+ int LightRowLength(int row){return row==8?1:row==7?Snapshots().Length:row==6?(groupBulbs.TryGetValue(lightId,out var gb)?gb.Length:0):row==0?1+lightBriSteps.Length:row==1?LightScenes().Length:row==4?1+MusicModes().Length:row==5?LightOptions().Count:row==3?moodNames.Length:lightColorNames.Length;}
  // ---- light settings as a side sheet (BelAir OS 2 mockup): header with switch, brightness bar, then scenes, music, options, moods, colours ----
  int lightScroll;readonly Dictionary<int,List<int[]>> lightRects=new Dictionary<int,List<int[]>>();
  const int shW=820,shX=1920-40-820,shY=40,shH=1000,shTop=168,shPad=52;
@@ -1729,7 +1733,7 @@ public sealed class QuietHome : NUIApplication
   bool on=IsLampOn(lightId);int bri=lightBri.TryGetValue(lightId,out var b)?b:-1;string eff=lightEffect.TryGetValue(lightId,out var e)?e:"";
   bool music=haLampState.TryGetValue(MusicSwitch(),out var ms)&&ms=="on";string mmode=haSensor.TryGetValue(MusicSelect(),out var mm)?mm:"";
   sheet.Add(Label(LampName(lightId),shPad,46,shW-shPad*2-120,56,44,ink,"Bold"));
-  sheet.Add(Label(!on?"Éteinte":music?"Mode musique · "+MusicFrench(mmode):(eff!=""&&eff!="none"&&eff!="None"?"Scène "+GoveeFrench(lightId,eff):"Allumée")+(bri>=0?" · "+(int)Math.Round(bri*100/255.0)+" %":""),shPad,106,shW-shPad*2-120,32,22,muted,"Medium"));
+  sheet.Add(Label(!on?"Éteinte":VideoSyncOn()?(lightId==backlightId?"Synchro vidéo · Cinéma":"DreamView")+(bri>=0?" · "+(int)Math.Round(bri*100/255.0)+" %":""):music?"Mode musique · "+MusicFrench(mmode):(eff!=""&&eff!="none"&&eff!="None"?"Scène "+GoveeFrench(lightId,eff):"Allumée")+(bri>=0?" · "+(int)Math.Round(bri*100/255.0)+" %":""),shPad,106,shW-shPad*2-120,32,22,muted,"Medium"));
   lightRects.Clear();
   // header switch = row 0, col 0
   var sw=new View{Position2D=new Position2D(shW-shPad-92,62),Size2D=new Size2D(92,54),CornerRadius=new Vector4(27,27,27,27),BackgroundColor=on?new Color(.204f,.78f,.35f,1):dark?new Color(1,1,1,.22f):new Color(0,0,0,.14f)};sheet.Add(sw);
@@ -1759,7 +1763,7 @@ public sealed class QuietHome : NUIApplication
     if(fb){focusTop=Math.Min(focusTop,y);}
     y+=42+64+40;continue;
    }
-   string cap=row==7?"Instantanés Govee":row==6?"Spots":row==1?"Scènes":row==4?"Musique":row==5?"Options":row==3?"Ambiances":"Couleurs";
+   string cap=row==8?"Synchro avec l’image":row==7?"Instantanés Govee":row==6?"Spots":row==1?"Scènes":row==4?"Musique":row==5?"Options":row==3?"Ambiances":"Couleurs";
    body.Add(Label(cap,shPad,y,400,34,26,ink,"Semibold"));
    if(row==1&&goveeLibs.TryGetValue(lightId,out var glib0)){int total=glib0.Categories.Sum(c=>c.Value.Count);var r=Label(total+" · OK sur « Toutes » pour le catalogue",shPad,y+4,inner,30,20,muted,"Medium");r.HorizontalAlignment=HorizontalAlignment.End;body.Add(r);}
    y+=50;
@@ -1769,7 +1773,7 @@ public sealed class QuietHome : NUIApplication
     for(int i=0;i<n;i++){
      int x=shPad+(i%4)*(cw+gap),yy=y+(i/4)*(ch+gap);bool f=lightRow==1&&lightCol==i;
      string name=gv?LightScenes()[i]:SceneName(LightScenes()[i]);bool all=gv&&i>=Math.Min(goveeQuick,glb.Popular.Count);
-     bool act=on&&!all&&(gv?eff==glb.Popular[i].En:eff==LightScenes()[i]);
+     bool act=on&&!all&&!VideoSyncOn()&&(gv?eff==glb.Popular[i].En:eff==LightScenes()[i]);
      var t=new View{Position2D=new Position2D(x+cw/2,yy+ch/2),Size2D=new Size2D(cw,ch),PivotPoint=new Position(.5f,.5f,.5f),PositionUsesPivotPoint=true,CornerRadius=new Vector4(22,22,22,22),BackgroundColor=all?ChipFill():new Color(0,0,0,0),Scale=f?new Vector3(1.07f,1.07f,1):new Vector3(1,1,1)};body.Add(t);
      if(!all){t.Add(new ImageView{ResourceUrl=SceneArt(name,cw,ch),Size2D=new Size2D(cw,ch),CornerRadius=new Vector4(22,22,22,22)});
       var l=Label(name,14,ch-62,cw-24,52,21,white,"Semibold");l.MultiLine=true;l.LineWrapMode=LineWrapMode.Word;l.VerticalAlignment=VerticalAlignment.Bottom;t.Add(l);}
@@ -1792,7 +1796,8 @@ public sealed class QuietHome : NUIApplication
    int cx=shPad,cy=y,chH=54,cgap=14;
    for(int i=0;i<n;i++){
     string text;bool act;Color dot=new Color(0,0,0,0);bool hasDot=false;
-    if(row==7){text=Snapshots()[i];act=haSensor.TryGetValue(SnapshotSelect(),out var cs)&&cs==text;}
+    if(row==8){act=VideoSyncOn();text=act?"Vidéo · Cinéma · actif":"Vidéo · Cinéma";}
+    else if(row==7){text=Snapshots()[i];act=haSensor.TryGetValue(SnapshotSelect(),out var cs)&&cs==text;}
     else if(row==6){string bulb=groupBulbs[lightId][i];act=haLampState.TryGetValue(bulb,out var bs)&&bs=="on";text="Spot "+(i+1)+(act?" · allumé":" · éteint");}
     else if(row==4){var modes=MusicModes();if(i==0){text=music?"Arrêter":"Activer";act=music;}else{text=MusicFrench(modes[i-1]);act=music&&modes[i-1]==mmode;}}
     else if(row==5){int oi=LightOptions()[i];text=optionName[oi];act=haLampState.TryGetValue("switch."+LightObj()+optionSuffix[oi],out var os)&&os=="on";}
@@ -1848,6 +1853,8 @@ public sealed class QuietHome : NUIApplication
    if(lightCol>=Math.Min(goveeQuick,glib.Popular.Count)){catalogOpen=true;catIndex=0;catSel=0;catPage=0;catOnTabs=true;BuildPage();return;}
    SendGovee(id,glib.Popular[lightCol]);BuildPage();return;
   }
+  else if(lightRow==8){string sw=MemberEntities(id,"switch","_dreamview").First();haLampState[sw]="on";haLampState[id]="on";lightEffect[id]="";HaCommanded(sw);
+   body="{\"p\":\"light/turn_on\",\"b\":{\"entity_id\":\""+id+"\"}},{\"p\":\"govee/send_raw_ptreal\",\"b\":{\"entity_id\":\""+id+"\",\"frame\":\""+videoFrame+"\"},\"w\":600}";}
   else if(lightRow==7){string sel=SnapshotSelect(),opt=Snapshots()[lightCol];haSensor[sel]=opt;haLampState[id]="on";HaCommanded(sel);
    body="{\"p\":\"select/select_option\",\"b\":{\"entity_id\":\""+sel+"\",\"option\":\""+opt.Replace("\\","").Replace("\"","")+"\"}}";}
   else if(lightRow==6){string b=groupBulbs[id][lightCol];bool bon=haLampState.TryGetValue(b,out var bs)&&bs=="on";haLampState[b]=bon?"off":"on";if(!bon)haLampState[id]="on";HaCommanded(b);
