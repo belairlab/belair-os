@@ -24,7 +24,7 @@ Il est construit sur [Quiet Tizen](docs/quiet-tizen.md) (launcher natif NUI/C#, 
 
 | Onglet | Contenu |
 |---|---|
-| **Accueil** | Tuile Apple TV avec ce qui est en lecture (affiche, progression, temps restant), Bourse CAC 40, « Le saviez-vous ? », métro 6 en temps réel, météo, températures intérieures, électricité, heure de Paris et de Buenos Aires, dock d'applis qui s'ouvrent directement sur l'Apple TV (dont **France 2 en direct**) |
+| **Accueil** | En grand, ce qui est en lecture sur l'Apple TV (titre, progression, affiche et image plein écran en fond), puis les rangées « Regarder » et « Infos » en tuiles de verre : Bourse CAC 40, « Le saviez-vous ? », métro 6 en temps réel, météo, températures intérieures, électricité, heure de Paris et de Buenos Aires, dock d'applis qui s'ouvrent directement sur l'Apple TV (dont **France 2 en direct**) |
 | **Applis** | Toutes les applis installées, avec leurs vraies icônes, triées par usage |
 | **Plex** | Ce qui joue sur l'Apple TV, « Reprendre » (Continuer à regarder, À suivre) et « Ajoutés récemment », lancement direct dans Plex |
 | **Maison** | Scènes, volets, lampes, lampes Govee avec scènes, mode cinéma automatique |
@@ -112,7 +112,7 @@ La tuile météo annonce la **pluie dans l'heure** (prévision par quart d'heure
 
   ![Mode d'image](docs/screenshots/mode-image.jpg)
 
-- **Thème** automatique (clair du lever au coucher du soleil à Paris), clair ou sombre ; 6 couleurs d'accent ; fonds d'écran Classique, Météo, Affiche Plex ou Aurore.
+- **Thème** automatique (clair du lever au coucher du soleil à Paris), clair ou sombre ; 6 couleurs d'accent ; fonds d'écran Classique, Météo, Affiche Plex, Aurore ou **Années 70** (soleil rétro rayé, crème et rouille).
 - **Économiseur d'écran** pour l'OLED : horloge qui se déplace, météo, températures intérieures, métro.
 
 ![Applis](docs/screenshots/applis.jpg)

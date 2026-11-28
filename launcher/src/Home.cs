@@ -38,10 +38,10 @@ public sealed class QuietHome : NUIApplication
  readonly Dictionary<string,string> felix=new Dictionary<string,string>();readonly List<string[]> felixButtons=new List<string[]>();string felixMap="",felixStamp="";bool felixLoaded;
  string prefTheme="auto",briefDate="";int prefAccent,prefWall;bool prefBrief=true;string wallKind="";
  View briefRoot;Tizen.NUI.Timer briefTimer;readonly Dictionary<string,TextLabel[]> briefCards=new Dictionary<string,TextLabel[]>();TextLabel briefClock;
- static readonly string[] accentNames={"Indigo","Bleu","Vert","Ambre","Rose","Graphite"};
- static readonly float[][] accentLight={new[]{.24f,.29f,.72f},new[]{.04f,.42f,.84f},new[]{.09f,.50f,.33f},new[]{.76f,.43f,.04f},new[]{.80f,.20f,.45f},new[]{.25f,.27f,.31f}};
- static readonly float[][] accentDark={new[]{.45f,.55f,1f},new[]{.36f,.66f,1f},new[]{.35f,.82f,.58f},new[]{1f,.70f,.30f},new[]{1f,.50f,.68f},new[]{.62f,.66f,.74f}};
- static readonly string[] wallNames={"Classique","Météo","Affiche","Aurore"};
+ static readonly string[] accentNames={"Indigo","Bleu","Vert","Ambre","Rose","Graphite","Rouille"};
+ static readonly float[][] accentLight={new[]{.24f,.29f,.72f},new[]{.04f,.42f,.84f},new[]{.09f,.50f,.33f},new[]{.76f,.43f,.04f},new[]{.80f,.20f,.45f},new[]{.25f,.27f,.31f},new[]{.76f,.31f,.15f}};
+ static readonly float[][] accentDark={new[]{.45f,.55f,1f},new[]{.36f,.66f,1f},new[]{.35f,.82f,.58f},new[]{1f,.70f,.30f},new[]{1f,.50f,.68f},new[]{.62f,.66f,.74f},new[]{.98f,.56f,.29f}};
+ static readonly string[] wallNames={"Classique","Météo","Affiche","Aurore","Années 70"};
  readonly List<Slot> slots=new List<Slot>();
  readonly List<View> scene=new List<View>();
  readonly Dictionary<string,CachedArtwork> artworkCache=new Dictionary<string,CachedArtwork>();
@@ -51,6 +51,7 @@ public sealed class QuietHome : NUIApplication
  int libraryPage;
  string libraryError="";
  TextLabel worldParis,worldBa;
+ TextLabel heroButton;View heroBackdrop;ImageView heroBackdropImage;
  TextLabel clock, weatherPlace, weatherTemperature, weatherCondition, weatherRange, notice, detail;
  TextLabel metroStatus, metroNationTime, metroEtoileTime;
  TextLabel[] tabs;
@@ -265,6 +266,8 @@ public sealed class QuietHome : NUIApplication
   else if(requested!=null&&requested.StartsWith("show:catalog:")){page=5;area=1;selected=0;lightId=requested.Substring(13);lightOpen=true;catalogOpen=true;catIndex=0;catSel=0;catPage=0;catOnTabs=true;BuildPage();}
   else if(requested!=null&&requested.StartsWith("show:cover:")){page=5;area=1;selected=0;coverPopupEntity=requested.Substring(11);coverPopupSel=2;coverPopupOpen=true;BuildPage();}
   else if(requested!=null&&requested.StartsWith("show:findfocus:")&&Demo()){page=11;area=1;findFocus="device_tracker.demo_"+requested.Substring(15);BuildPage();}
+  else if(requested=="show:herodemo"){page=0;area=1;selected=0;CloseOverlays();heroDemo=true;if(plexItems.Count==0)RequestExtra(true,true,false);else ApplyHeroDemo();}
+  else if(requested!=null&&requested.StartsWith("show:pref:")){var pp=requested.Substring(10).Split(':');int pv;if(pp.Length==2&&int.TryParse(pp[1],out pv)){if(pp[0]=="wall")prefWall=Math.Max(0,Math.Min(wallNames.Length-1,pv));else if(pp[0]=="accent")prefAccent=Math.Max(0,Math.Min(accentNames.Length-1,pv));SavePrefs();ApplyTheme();BuildPage();}}
   else if(requested=="show:close"){CloseBrief(false);pictureOpen=false;cleanOpen=false;BuildPage();}
   else if(requested=="show:picture"){page=2;area=1;selected=3;BuildPage();OpenPicture();}
   else if(requested=="show:clean"){page=9;area=1;selected=0;cleanOpen=true;cleanRow=0;cleanCol=0;BuildPage();}
@@ -311,54 +314,50 @@ public sealed class QuietHome : NUIApplication
  {return (TextLabel)Add(Label(text,x,y,w,h,size,color,face));}
  TextLabel Label(string text,int x,int y,int w,int h,float size,Color color,string face="Medium")
  {return new TextLabel{Text=text,Position2D=new Position2D(x,y),Size2D=new Size2D(w,h),PixelSize=size,FontFamily="Quiet Inter "+face,TextColor=color,VerticalAlignment=VerticalAlignment.Center,Ellipsis=false};}
+ // ---- Accueil "Infos" row: five glass tiles of one size ----
+ const int infoY=826,infoW=326,infoH=184,infoGap=24;
+ static int InfoX(int i){return 96+i*(infoW+infoGap);}
+ View InfoTile(int i){var t=Panel(InfoX(i)+infoW/2,infoY+infoH/2,infoW,infoH,GlassFill(),28);t.PivotPoint=new Position(.5f,.5f,.5f);t.PositionUsesPivotPoint=true;t.BorderlineWidth=1;t.BorderlineColor=GlassEdge();return t;}
  void BuildWeatherWidget()
  {
-  int x=1340,y=494,w=500,h=210;
-  var shadow=Add(new ImageView{ResourceUrl=Root+"shadow-wide.svg",Position2D=new Position2D(x-24,y-10),Size2D=new Size2D(w+48,h+48)});
-  shadow.Opacity=.55f;
-  weatherCard=Panel(x+w/2,y+h/2,w,h,Sf(1,1,1,.92f),24);weatherCard.PivotPoint=new Position(.5f,.5f,.5f);weatherCard.PositionUsesPivotPoint=true;
-  weatherIcon=new View{Position2D=new Position2D(16,60),Size2D=new Size2D(88,88)};weatherCard.Add(weatherIcon);
-  weatherPlace=Label("MÉTÉO · PARIS 12E",128,15,270,32,18,muted,"Semibold");weatherCard.Add(weatherPlace);
-  clock=Label(DateTime.Now.ToString("HH:mm"),410,15,66,32,18,muted);clock.HorizontalAlignment=HorizontalAlignment.End;weatherCard.Add(clock);
-  weatherCard.Add(Label("ACTUELLE",130,40,145,18,12,muted,"Semibold"));
-  weatherTemperature=Label(weatherTemperatureText,116,44,232,112,76,ink,"Semibold");weatherTemperature.Ellipsis=false;weatherCard.Add(weatherTemperature);
-  weatherCondition=Label(weatherConditionText,350,86,146,60,18,ink,"Semibold");weatherCondition.MultiLine=true;weatherCard.Add(weatherCondition);
-  weatherRange=Label(WeatherRange(),128,156,348,24,16,muted,"Medium");weatherCard.Add(weatherRange);
-  weatherRain=Label(RainText(),128,180,348,24,15,RainColor(),"Semibold");weatherCard.Add(weatherRain);
-  DrawWeatherIcon();AnimateWeatherIcon(weatherIcon,1.2f);
+  int x=InfoX(0),y=infoY,w=infoW,h=infoH;
+  weatherCard=InfoTile(0);
+  weatherPlace=Label("MÉTÉO",22,14,200,28,18,muted,"Semibold");weatherCard.Add(weatherPlace);
+  weatherIcon=new View{Position2D=new Position2D(w-102,6),Size2D=new Size2D(88,88)};weatherCard.Add(weatherIcon);
+  weatherTemperature=Label(weatherTemperatureText,18,40,200,78,66,ink,"Display");weatherTemperature.Ellipsis=false;weatherCard.Add(weatherTemperature);
+  weatherCondition=Label(OneLine(weatherConditionText),22,116,w-44,28,21,ink,"Semibold");weatherCondition.MultiLine=false;weatherCard.Add(weatherCondition);
+  weatherRange=Label(WeatherRange(),22,144,w-44,26,19,muted,"Medium");weatherCard.Add(weatherRange);
+  weatherRain=Label(RainText(),22,144,w-44,26,19,RainColor(),"Semibold");weatherRain.Opacity=0;weatherCard.Add(weatherRain);
+  DrawWeatherIcon();AnimateWeatherIcon(weatherIcon,1.2f);ShowRainLine();
   weatherSlotIndex=slots.Count;
-  slots.Add(new Slot{Card=weatherCard,Label=weatherPlace,Name="Météo Paris 12e",Action="weather",Description="Prévisions du jour et sur 7 jours",Row=-2,X=x,Y=y,W=w,H=h});
+  slots.Add(new Slot{Card=weatherCard,Label=weatherPlace,Name="Météo Paris 12e",Action="weather",Description=RainText()+" · OK pour les prévisions",Row=-2,X=x,Y=y,W=w,H=h});
  }
  void BuildMetroWidget()
  {
-  int x=1340,y=262,w=500,h=210;
-  var shadow=Add(new ImageView{ResourceUrl=Root+"shadow-wide.svg",Position2D=new Position2D(x-24,y-10),Size2D=new Size2D(w+48,h+48)});
-  shadow.Opacity=.55f;
-  metroCard=Panel(x+w/2,y+h/2,w,h,new Color(.10f,.16f,.27f,1),24);metroCard.PivotPoint=new Position(.5f,.5f,.5f);metroCard.PositionUsesPivotPoint=true;
-  metroCard.Add(Label("MÉTRO 6 · BEL-AIR",24,14,250,34,20,white,"Semibold"));
-  metroStatus=Label(MetroStatusText(),292,17,184,27,16,TrafficColor(),"Semibold");metroStatus.HorizontalAlignment=HorizontalAlignment.End;metroCard.Add(metroStatus);
-  metroNationTime=AddMetroTileDirection("Nation","Nation",58);
-  metroEtoileTime=AddMetroTileDirection("Charles-de-Gaulle–Étoile","Etoile",116);
-  metroFoot=Label(MetroFoot(),24,176,452,25,15,new Color(.82f,.87f,.94f,1),"Medium");metroCard.Add(metroFoot);
+  int x=InfoX(1),y=infoY,w=infoW,h=infoH;
+  metroCard=InfoTile(1);
+  metroCard.Add(Label("MÉTRO 6",22,14,150,28,18,muted,"Semibold"));
+  metroStatus=Label(MetroStatusText(),150,14,w-172,28,17,TrafficColor(),"Semibold");metroStatus.HorizontalAlignment=HorizontalAlignment.End;metroCard.Add(metroStatus);
+  metroNationTime=AddMetroTileDirection("Nation","Nation",52);
+  metroEtoileTime=AddMetroTileDirection("Étoile","Etoile",104);
+  metroFoot=null;
   metroSlotIndex=slots.Count;
-  slots.Add(new Slot{Card=metroCard,Shadow=shadow,Label=metroStatus,Name="Métro 6 · Bel-Air",Action="metro",Description="2 prochains passages par direction",Row=-2,X=x,Y=y,W=w,H=h});
+  slots.Add(new Slot{Card=metroCard,Label=metroStatus,Name="Métro 6 · Bel-Air",Action="metro",Description="Bel-Air · OK pour le trafic et les prochains passages",Row=-2,X=x,Y=y,W=w,H=h});
  }
  TextLabel AddMetroTileDirection(string title,string direction,int y)
  {
-  var row=new View{Position2D=new Position2D(18,y),Size2D=new Size2D(464,54),BackgroundColor=new Color(1,1,1,.10f),CornerRadius=new Vector4(14,14,14,14)};
-  metroCard.Add(row);
-  var lineNumber=new View{Position2D=new Position2D(10,7),Size2D=new Size2D(40,40),BackgroundColor=new Color(.36f,.73f,.49f,1),CornerRadius=new Vector4(20,20,20,20)};
-  row.Add(lineNumber);
-  var number=Label("6",0,0,40,40,21,white,"Semibold");number.HorizontalAlignment=HorizontalAlignment.Center;lineNumber.Add(number);
-  row.Add(Label(title,64,3,220,47,direction=="Nation"?18:17,white,"Semibold"));
-  var arrival=Label(MetroNextText(direction),294,3,156,47,17,new Color(.83f,.9f,.95f,1),"Semibold");arrival.HorizontalAlignment=HorizontalAlignment.End;row.Add(arrival);return arrival;
+  var row=new View{Position2D=new Position2D(14,y),Size2D=new Size2D(infoW-28,46),BackgroundColor=dark?new Color(1,1,1,.07f):new Color(0,0,0,.04f),CornerRadius=new Vector4(14,14,14,14)};metroCard.Add(row);
+  var lineNumber=new View{Position2D=new Position2D(8,7),Size2D=new Size2D(32,32),BackgroundColor=new Color(.36f,.73f,.49f,1),CornerRadius=new Vector4(16,16,16,16)};row.Add(lineNumber);
+  var number=Label("6",0,0,32,32,18,white,"Semibold");number.HorizontalAlignment=HorizontalAlignment.Center;lineNumber.Add(number);
+  row.Add(Label(title,50,0,110,46,20,ink,"Semibold"));
+  var arrival=Label(MetroNextText(direction),150,0,infoW-28-160,46,20,ink,"Semibold");arrival.HorizontalAlignment=HorizontalAlignment.End;row.Add(arrival);return arrival;
  }
  string MetroStatusText(){return !trafficAvailable?"Trafic ?":trafficHasAlert?"PERTURBÉ":"TRAFIC OK";}
- Color TrafficColor(){return trafficHasAlert?new Color(.72f,.16f,.13f,1):trafficAvailable?new Color(.13f,.48f,.30f,1):muted;}
+ Color TrafficColor(){return trafficHasAlert?(dark?new Color(1f,.55f,.50f,1):new Color(.72f,.16f,.13f,1)):trafficAvailable?(dark?new Color(.45f,.86f,.60f,1):new Color(.13f,.48f,.30f,1)):muted;}
  string MetroUpdatedTime(){DateTime time;return DateTime.TryParse(metroUpdated,CultureInfo.InvariantCulture,DateTimeStyles.RoundtripKind,out time)?time.ToLocalTime().ToString("HH:mm"):"—";}
  string TrafficUpdatedTime(){DateTime time;return DateTime.TryParse(trafficUpdated,CultureInfo.InvariantCulture,DateTimeStyles.RoundtripKind,out time)?time.ToLocalTime().ToString("HH:mm"):"—";}
  MetroDeparture NextMetro(string direction){foreach(var departure in metroDepartures)if(departure.Destination.IndexOf(direction,StringComparison.OrdinalIgnoreCase)>=0)return departure;return null;}
- string MetroNextText(string direction){var departure=NextMetro(direction);return departure==null?"—":(departure.AtStop?"À quai":departure.Minutes==0?"<1 min":departure.Minutes+" min")+(departure.Time==""?"":" · "+departure.Time);}
+ string MetroNextText(string direction){var departure=NextMetro(direction);return departure==null?"—":departure.AtStop?"À quai":departure.Minutes==0?"<1 min":departure.Minutes+" min";}
  void UpdateMetroWidget(){if(metroStatus==null)return;metroStatus.Text=MetroStatusText();metroStatus.TextColor=TrafficColor();metroNationTime.Text=MetroNextText("Nation");metroEtoileTime.Text=MetroNextText("Etoile");}
  string WeatherRange(){return "Max "+(weatherHigh==""?"--°":weatherHigh)+" · Min "+(weatherLow==""?"--°":weatherLow);}
  void ReceiveWeather(AppControlReceivedEventArgs e)
@@ -373,7 +372,7 @@ public sealed class QuietHome : NUIApplication
   if(e.ReceivedAppControl.ExtraData.TryGet("quiet_hours",out value))ReadForecastHours(value);
   weatherText="Paris 12e · "+weatherTemperatureText+" · "+weatherConditionText;
   if(weatherHigh!=""&&weatherLow!="")weatherText+=" · max "+weatherHigh+" / min "+weatherLow;
-  if(weatherTemperature!=null){weatherTemperature.Text=weatherTemperatureText;weatherCondition.Text=weatherConditionText;weatherRange.Text=WeatherRange();DrawWeatherIcon();}
+  if(weatherTemperature!=null){weatherTemperature.Text=weatherTemperatureText;weatherCondition.Text=OneLine(weatherConditionText);weatherRange.Text=WeatherRange();DrawWeatherIcon();}
   if(page==3)BuildPage();
   WriteState("weather_received");
  }
@@ -621,8 +620,9 @@ public sealed class QuietHome : NUIApplication
   if(focusAnimation!=null){focusAnimation.Stop();focusAnimation.Dispose();focusAnimation=null;}
   ClearWeatherAnimations();ClearRainAnimations();hourCards.Clear();dayCards.Clear();
   ParkArtwork();pageArtworkCold=0;
-  foreach(var v in scene){Window.Default.Remove(v);v.Dispose();}scene.Clear();slots.Clear();homeSensorValue=null;weatherRain=null;metroFoot=null;weatherGlyphs.Clear();weatherCard=null;weatherIcon=null;weatherSlotIndex=-1;metroCard=null;metroSlotIndex=-1;marketSlotIndex=-1;factSlotIndex=-1;newsButtonSlotIndex=-1;newsCategorySlotStart=-1;newsArticleSlotStart=-1;newsTopTitle=null;marketHeadline=null;marketValue=null;marketChange=null;marketTime=null;marketSub=null;marketChartHost=null;cinemaState=null;felixState=null;cinemaCard=null;cinemaDot=null;factBody=null;metroStatus=null;metroNationTime=null;metroEtoileTime=null;weatherPlace=null;weatherTemperature=null;weatherCondition=null;weatherRange=null;heroTop=null;heroTitle=null;heroSub=null;heroTime=null;heroArt=null;heroBar=null;heroFill=null;heroArtPath="";worldParis=null;worldBa=null;
+  foreach(var v in scene){Window.Default.Remove(v);v.Dispose();}scene.Clear();slots.Clear();homeSensorValue=null;weatherRain=null;metroFoot=null;weatherGlyphs.Clear();weatherCard=null;weatherIcon=null;weatherSlotIndex=-1;metroCard=null;metroSlotIndex=-1;marketSlotIndex=-1;factSlotIndex=-1;newsButtonSlotIndex=-1;newsCategorySlotStart=-1;newsArticleSlotStart=-1;newsTopTitle=null;marketHeadline=null;marketValue=null;marketChange=null;marketTime=null;marketSub=null;marketChartHost=null;cinemaState=null;felixState=null;cinemaCard=null;cinemaDot=null;factBody=null;metroStatus=null;metroNationTime=null;metroEtoileTime=null;weatherPlace=null;weatherTemperature=null;weatherCondition=null;weatherRange=null;heroTop=null;heroTitle=null;heroBackdrop=null;heroBackdropImage=null;heroButton=null;heroSub=null;heroTime=null;heroArt=null;heroBar=null;heroFill=null;heroArtPath="";worldParis=null;worldBa=null;
   AddWallpaper();
+  if(page==0)BuildHeroBackdrop();
   // Header (BelAir OS 2): brand mark, one floating glass tab bar in the middle, round glass buttons on the right.
   var brandMark=Panel(96,52,52,52,accent,16);var brandLetter=Label("B",0,0,52,52,28,white,"Semibold");brandLetter.HorizontalAlignment=HorizontalAlignment.Center;brandMark.Add(brandLetter);
   int pillW=12;for(int i=0;i<tabNav.Length;i++)pillW+=tabPillW[i]+(i>0?4:0);pillW+=12;int pillX=(1920-pillW)/2;
@@ -631,19 +631,25 @@ public sealed class QuietHome : NUIApplication
   for(int i=0,tx=pillX+12;i<tabNav.Length;tx+=tabPillW[i]+4,i++){tabs[i]=Text(tabNav[i],tx,48,tabPillW[i],56,22,muted);tabs[i].HorizontalAlignment=HorizontalAlignment.Center;}
   if(page!=0){clock=Text(DateTime.Now.ToString("HH:mm"),1540,132,300,44,28,ink,"Semibold");clock.HorizontalAlignment=HorizontalAlignment.End;}
   if(page==0){
-   var hero=Feature("Apple TV","hdmi:13","Appareil externe · HDMI 1","hero-apple-tv.svg",80,262,700,442,"hero");
-   heroArt=new View{Position2D=new Position2D(422,82),Size2D=new Size2D(246,170),CornerRadius=new Vector4(9,9,9,9)};hero.Card.Add(heroArt);
-   heroTop=Label("ENTRÉE ACTIVE",44,52,360,40,24,new Color(.86f,.91f,1,1),"Semibold");hero.Card.Add(heroTop);
-   heroTitle=Label("Apple TV",40,124,560,100,72,white,"Display");hero.Card.Add(heroTitle);
-   heroSub=Label("Passer sur HDMI 1",46,246,440,48,30,new Color(.88f,.93f,1,1));hero.Card.Add(heroSub);
-   heroBar=new View{Position2D=new Position2D(46,326),Size2D=new Size2D(340,6),BackgroundColor=new Color(1,1,1,.22f),CornerRadius=new Vector4(3,3,3,3),Opacity=0};hero.Card.Add(heroBar);
+   // BelAir OS 2 Accueil: what is playing, big, straight on the backdrop; then the "Regarder" and "Infos" rows.
+   clock=null;heroArtPath=null;
+   heroTop=Text("ENTRÉE ACTIVE",96,226,1100,34,22,muted,"Semibold");
+   heroTitle=Text("Apple TV",92,256,1220,128,88,ink,"Display");heroTitle.Ellipsis=false;
+   heroSub=Text("",96,378,1100,40,28,muted,"Medium");
+   heroBar=(View)Add(new View{Position2D=new Position2D(96,440),Size2D=new Size2D(420,6),BackgroundColor=new Color(1,1,1,.25f),CornerRadius=new Vector4(3,3,3,3),Opacity=0});
    heroFill=new View{Size2D=new Size2D(0,6),BackgroundColor=white,CornerRadius=new Vector4(3,3,3,3)};heroBar.Add(heroFill);
-   heroTime=Label("",46,338,360,30,19,new Color(.86f,.91f,1,.9f),"Medium");hero.Card.Add(heroTime);
+   heroTime=Text("",536,426,400,34,22,muted,"Medium");
+   var hb=Panel(96+190,480+36,380,72,white,36);hb.PivotPoint=new Position(.5f,.5f,.5f);hb.PositionUsesPivotPoint=true;
+   heroButton=Label("Passer sur l’Apple TV",0,0,380,72,24,new Color(.04f,.06f,.10f,1),"Semibold");heroButton.HorizontalAlignment=HorizontalAlignment.Center;hb.Add(heroButton);
+   slots.Add(new Slot{Card=hb,Name="Apple TV",Action="hdmi:13",Description="Entrée HDMI 1 · Apple TV",Row=0,X=96,Y=480,W=380,H=72});
+   heroArt=Panel(1376,212,464,293,Sf(.9f,.91f,.94f,1),28);heroArt.ClippingMode=ClippingModeType.ClipChildren;heroArt.BoxShadow=new Shadow(50f,new Color(0,0,0,dark?.55f:.22f),new Vector2(0,24));
    UpdateHero();
+   Text("Regarder",96,584,600,40,26,ink,"Semibold");
+   Text("Infos",96,782,600,40,26,ink,"Semibold");
+   BuildWeatherWidget();
+   BuildMetroWidget();
    BuildMarketTile();
    BuildFactTile();
-   BuildMetroWidget();
-   BuildWeatherWidget();
    BuildHomeSensors();
   }else if(page==1){
    BuildLibrary();
@@ -666,7 +672,6 @@ public sealed class QuietHome : NUIApplication
    if(pictureOpen)BuildPicturePopup();
   }else if(page==3)BuildForecast();else if(page==4)BuildMetroDetail();else if(page==6)BuildSystemInfo();else if(page==7)BuildEnergy();else if(page==8)BuildPlex();else if(page==9)BuildFelix();else if(page==10)BuildBikes();else if(page==11)BuildFind();else BuildHomeAssistant();
   if(page==0){
-  Add(new ImageView{ResourceUrl=Root+"glass-shelf.svg",Position2D=new Position2D(80,842),Size2D=new Size2D(1760,172),Opacity=dark?.16f:1f});
   var dk=new[]{new[]{"Netflix","atv:org.tizen.netflix-app:Netflix","netflix"},new[]{"YouTube","atv:com.samsung.tv.cobalt-yt:YouTube","youtube"},new[]{"CANAL+","atv:QmpwflxWdt.CanalPlusLauncher:CANAL+","canal-plus"},new[]{"Plex","atv:kIciSQlYEM.plex:Plex","plex"},new[]{"Prime Video","atv:org.tizen.primevideo:Prime Video","prime"},new[]{"Apple TV","atv:com.samsung.tv.aria-video:TV","apple-tv"},new[]{"France 2 en direct","channel:france-2","france-2"}};
   var dord=new List<int>();for(int i=0;i<dk.Length;i++)dord.Add(i);dord.Sort((x,y)=>{int ux=Use(UsageKey(dk[x][1])),uy=Use(UsageKey(dk[y][1]));return ux!=uy?uy-ux:x-y;});
   for(int i=0;i<dord.Count;i++)Dock(dk[dord[i]][0],dk[dord[i]][1],dk[dord[i]][2],i,dk.Length);
@@ -1196,19 +1201,16 @@ public sealed class QuietHome : NUIApplication
  }
  void BuildMarketTile()
  {
-  int x=816,y=262,w=500,h=210;
-  var shadow=Add(new ImageView{ResourceUrl=Root+"shadow-wide.svg",Position2D=new Position2D(x-24,y-10),Size2D=new Size2D(w+48,h+48)});shadow.Opacity=.55f;
-  var card=Panel(x+w/2,y+h/2,w,h,new Color(0,0,0,0),20);card.PivotPoint=new Position(.5f,.5f,.5f);card.PositionUsesPivotPoint=true;
-  card.Add(new ImageView{ResourceUrl=Root+"feature-market-live.svg",Size2D=new Size2D(w,h)});
-  card.Add(Label("BOURSE · CAC 40",23,18,300,34,21,white,"Semibold"));
-  marketTime=Label("",280,20,197,30,15,new Color(.79f,.86f,.95f,1),"Medium");marketTime.HorizontalAlignment=HorizontalAlignment.End;card.Add(marketTime);
-  marketValue=Label("",23,52,250,58,42,white,"Display");card.Add(marketValue);
-  marketChange=Label("",23,108,250,32,22,white,"Semibold");card.Add(marketChange);
-  marketChartHost=new View{Position2D=new Position2D(262,58),Size2D=new Size2D(218,86)};card.Add(marketChartHost);
-  marketSub=Label("",23,148,454,26,16,new Color(.88f,.92f,.98f,1),"Medium");card.Add(marketSub);
-  card.Add(Label("OK · cours et actualités",23,176,320,24,15,new Color(.79f,.86f,.95f,1),"Medium"));
+  int x=InfoX(2),y=infoY,w=infoW,h=infoH;
+  var card=InfoTile(2);
+  card.Add(Label("CAC 40",22,14,140,28,18,muted,"Semibold"));
+  marketTime=Label("",150,14,w-172,28,17,muted,"Medium");marketTime.HorizontalAlignment=HorizontalAlignment.End;card.Add(marketTime);
+  marketValue=Label("",20,44,w-40,58,46,ink,"Display");card.Add(marketValue);
+  marketChange=Label("",22,102,170,30,21,ink,"Semibold");card.Add(marketChange);
+  marketChartHost=new View{Position2D=new Position2D(186,100),Size2D=new Size2D(120,40)};card.Add(marketChartHost);
+  marketSub=Label("",22,146,w-44,26,18,muted,"Medium");card.Add(marketSub);
   marketSlotIndex=slots.Count;
-  slots.Add(new Slot{Card=card,Shadow=shadow,Name="Bourse · CAC 40",Action="markets",Description="Cours et actualités financières",Row=0,X=x,Y=y,W=w,H=h});
+  slots.Add(new Slot{Card=card,Name="Bourse · CAC 40",Action="markets",Description="OK pour les cours et l’actualité financière",Row=-2,X=x,Y=y,W=w,H=h});
   UpdateMarketTile();
  }
  // ---- markets ----
@@ -1257,12 +1259,12 @@ public sealed class QuietHome : NUIApplication
  {
   if(marketValue==null)return;
   var cac=Quote("^FCHI");
-  if(cac==null){marketValue.Text="—";marketChange.Text="Cours en chargement…";marketChange.TextColor=new Color(.79f,.86f,.95f,1);marketTime.Text="";marketSub.Text="";SetChart(marketChartHost,null,"","");return;}
+  if(cac==null){marketValue.Text="—";marketChange.Text="Chargement…";marketChange.TextColor=muted;marketTime.Text="";marketSub.Text="";SetChart(marketChartHost,null,"","");return;}
   double p=ChangePct(cac);
-  marketValue.Text=FmtPrice(cac);marketChange.Text=FmtPct(p);marketChange.TextColor=PctColor(p,true);marketTime.Text=QuoteTime(cac);
-  var parts=new List<string>();foreach(var sym in new[]{"^STOXX50E","^GSPC"}){var q=Quote(sym);if(q!=null)parts.Add(q.Name+" "+(ChangePct(q)>=0?"+":"−")+Math.Abs(ChangePct(q)).ToString("0.00",frCulture)+" %");}
-  marketSub.Text=string.Join("   ·   ",parts);
-  SetChart(marketChartHost,cac,p>=0?"#8CF1BF":"#FF8A80","#C9FFE0");
+  marketValue.Text=FmtPrice(cac);marketChange.Text=FmtPct(p);marketChange.TextColor=PctColor(p,dark);marketTime.Text=QuoteTime(cac);
+  var parts=new List<string>();foreach(var sym in new[]{"^STOXX50E","^GSPC"}){var q=Quote(sym);if(q!=null)parts.Add((sym=="^GSPC"?"S&P":"Stoxx")+" "+(ChangePct(q)>=0?"+":"−")+Math.Abs(ChangePct(q)).ToString("0.00",frCulture)+" %");}
+  marketSub.Text=string.Join(" · ",parts);
+  SetChart(marketChartHost,cac,p>=0?(dark?"#8CF1BF":"#1E9E5A"):(dark?"#FF8A80":"#D33A2C"),dark?"#C9FFE0":"#8A94A6");
  }
  void ReceiveMarkets(string json)
  {
@@ -1282,15 +1284,12 @@ public sealed class QuietHome : NUIApplication
  }
  void BuildFactTile()
  {
-  int x=816,y=494,w=500,h=210;
-  var shadow=Add(new ImageView{ResourceUrl=Root+"shadow-wide.svg",Position2D=new Position2D(x-24,y-10),Size2D=new Size2D(w+48,h+48)});shadow.Opacity=.55f;
-  var card=Panel(x+w/2,y+h/2,w,h,new Color(0,0,0,0),20);card.PivotPoint=new Position(.5f,.5f,.5f);card.PositionUsesPivotPoint=true;
-  card.Add(new ImageView{ResourceUrl=Root+"feature-fact-compact.svg",Size2D=new Size2D(w,h)});
-  card.Add(Label("LE SAVIEZ-VOUS ?",23,22,330,34,23,white,"Semibold"));
-  factBody=Label(facts[factIndex],23,55,360,114,15,white,"Medium");factBody.MultiLine=true;factBody.LineWrapMode=LineWrapMode.Word;factBody.Ellipsis=false;factBody.VerticalAlignment=VerticalAlignment.Top;card.Add(factBody);
-  card.Add(Label("OK · Lire le texte complet",23,169,370,25,15,new Color(1,.94f,.84f,1),"Medium"));
+  int x=InfoX(3),y=infoY,w=infoW,h=infoH;
+  var card=InfoTile(3);
+  card.Add(Label("LE SAVIEZ-VOUS ?",22,14,w-44,28,18,muted,"Semibold"));
+  factBody=Label(facts[factIndex],22,46,w-44,124,19,ink,"Medium");factBody.MultiLine=true;factBody.LineWrapMode=LineWrapMode.Word;factBody.Ellipsis=true;factBody.VerticalAlignment=VerticalAlignment.Top;card.Add(factBody);
   factSlotIndex=slots.Count;
-  slots.Add(new Slot{Card=card,Name="Le saviez-vous ?",Action="fact",Description="Une information aléatoire",Row=0,X=x,Y=y,W=w,H=h});
+  slots.Add(new Slot{Card=card,Name="Le saviez-vous ?",Action="fact",Description="OK pour lire l’anecdote en entier",Row=-2,X=x,Y=y,W=w,H=h});
  }
  void BuildFactDetail()
  {
@@ -1360,8 +1359,8 @@ public sealed class QuietHome : NUIApplication
  }
  void Dock(string label,string action,string icon,int n,int count)
  {
-  int H=120,G=count>6?30:40,W=(6*244+5*40-(count-1)*G)/count,total=count*W+(count-1)*G,startX=(1920-total)/2;
-  int cx=startX+n*(W+G)+W/2,cy=926;
+  int H=126,G=28,W=(1728-(count-1)*G)/count,startX=96;
+  int cx=startX+n*(W+G)+W/2,cy=630+H/2;
   var card=Panel(cx,cy,W,H,DockBg(icon),22);card.PivotPoint=new Position(.5f,.5f,.5f);card.PositionUsesPivotPoint=true;
   if(icon=="france-2"){
    var name=Label("France 2",0,16,W,52,34,white,"Semibold");name.HorizontalAlignment=HorizontalAlignment.Center;card.Add(name);
@@ -2121,7 +2120,7 @@ public sealed class QuietHome : NUIApplication
  }
  List<int> Row(int row){var r=new List<int>();for(int i=0;i<slots.Count;i++)if(slots[i].Row==row)r.Add(i);return r;}
  // ---- BelAir OS 2 design tokens: one glass material, one focus language ----
- Color GlassFill(){return dark?new Color(1,1,1,.10f):new Color(1,1,1,.66f);}
+ Color GlassFill(){return dark?new Color(1,1,1,.10f):prefWall==4?new Color(1f,.985f,.96f,.72f):new Color(1,1,1,.66f);}
  Color GlassEdge(){return dark?new Color(1,1,1,.20f):new Color(0,0,0,.07f);}
  Color FocusEdge(){return dark?new Color(1,1,1,.88f):accent;}
  Shadow FocusShadow(bool on){return on?new Shadow(46f,new Color(0,0,0,dark?.55f:.24f),new Vector2(0,20)):new Shadow(0f,new Color(0,0,0,0),new Vector2(0,0));}
@@ -2137,7 +2136,7 @@ public sealed class QuietHome : NUIApplication
    var s=slots[i];bool newsControl=s.Action.StartsWith("news_category:")||s.Action.StartsWith("news_item:")||s.Action.StartsWith("quote:");
    // PIN pad: focus is shown only on its starting key (1), so you know where you are but nobody can follow the code.
    bool f=factDetailOpen?false:page==11&&!findUnlocked?selected==i&&slots[i].Action=="pin:1":page==3?area==3&&selected==i:newsMenuOpen?newsControl&&area!=9&&!quoteDetailOpen&&selected==i:area!=0&&area!=9&&selected==i;
-   float scale=f?(page==8||page==9||page==10||page==11?(s.H>120?1.06f:1.05f):page==2&&s.Row==2?1.04f:page==5||page==4?1.05f:s.Action=="news"?1.035f:newsControl?1.015f:page==1&&s.Row>=0?1.055f:page==2&&s.Row>=0?1.035f:s.Row==0?1.05f:s.Row==1?(page==0?1.14f:1.03f):s.Row==-2?1.025f:s.Row==-1?1.18f:1):1;
+   float scale=f?(page==8||page==9||page==10||page==11?(s.H>120?1.06f:1.05f):page==2&&s.Row==2?1.04f:page==5||page==4?1.05f:s.Action=="news"?1.035f:newsControl?1.015f:page==1&&s.Row>=0?1.055f:page==2&&s.Row>=0?1.035f:s.Row==0?1.05f:s.Row==1?(page==0?1.1f:1.03f):s.Row==-2?(page==0?1.07f:1.025f):s.Row==-1?1.18f:1):1;
    // focus = lift (scale + soft shadow) and a thin light edge, never a thick coloured outline
    bool edgeAtRest=page==1&&s.Row>=0||s.Row==0&&page==0||s.Row==-1;
    s.Card.BorderlineWidth=f?2.5f:edgeAtRest?1:0;
@@ -2296,42 +2295,14 @@ public sealed class QuietHome : NUIApplication
    else if(k=="XF86Back"||k=="Back"||k=="Escape"||k=="XF86Exit")SelectSource(lastSource);
   }catch(Exception ex){ShowError(ex.Message);}
  }
+ // Accueil rows: hero button (area 1, Row 0), "Regarder" dock (area 2, Row 1), "Infos" tiles (area 4, Row -2).
  bool HandleHomeNavigation(string key)
  {
   if(page!=0||key!="Up"&&key!="Down"&&key!="Left"&&key!="Right")return false;
-  var dock=Row(1);
-  if(area==1){
-   if(key=="Right"){
-    if(selected==0)selected=marketSlotIndex;
-    else if(selected==marketSlotIndex){area=4;selected=metroSlotIndex;}
-    else if(selected==factSlotIndex){area=4;selected=weatherSlotIndex;}
-   }else if(key=="Left"){
-    if(selected==marketSlotIndex||selected==factSlotIndex)selected=0;
-   }else if(key=="Up"){
-    if(selected==factSlotIndex)selected=marketSlotIndex;
-    else area=0;
-   }else if(selected==marketSlotIndex)selected=factSlotIndex;
-   else{area=2;selected=dock[Math.Min(selected==factSlotIndex?3:1,dock.Count-1)];}
-   UpdateFocus();return true;
-  }
-  if(area==4){
-   if(key=="Up"){
-    if(selected==metroSlotIndex)area=0;
-    else selected=metroSlotIndex;
-   }else if(key=="Down"){
-    if(selected==metroSlotIndex)selected=weatherSlotIndex;
-    else{area=2;selected=dock[Math.Min(4,dock.Count-1)];}
-   }else if(key=="Left")selected=selected==metroSlotIndex?marketSlotIndex:factSlotIndex;
-   UpdateFocus();return true;
-  }
-  if(area==2&&key=="Up"){
-   int dockIndex=dock.IndexOf(selected);
-   if(dockIndex==0){area=1;selected=0;}
-   else if(dockIndex==1){area=1;selected=marketSlotIndex;}
-   else if(dockIndex==2){area=1;selected=factSlotIndex;}
-   else{area=4;selected=weatherSlotIndex;}
-   UpdateFocus();return true;
-  }
+  if(area==1&&(key=="Left"||key=="Right"))return true;
+  if(area==2&&key=="Down"){if(Row(-2).Count>0){area=4;selected=NearestInRow(-2,slots[selected].X);UpdateFocus();}return true;}
+  if(area==4&&key=="Up"){if(Row(1).Count>0){area=2;selected=NearestInRow(1,slots[selected].X);UpdateFocus();}return true;}
+  if(area==4&&key=="Down")return true;
   return false;
  }
  bool HandleGridKey(string k,string back)
@@ -2645,6 +2616,24 @@ public sealed class QuietHome : NUIApplication
   wallKind=kind;
   return WallFile("sky-"+kind,svg);
  }
+ // "Années 70": a striped sunset rising behind the top of the screen (rust, orange, mustard, brown) over warm cream;
+ // the lower half stays plain so the rows read well, and the hero backdrop fades into the same cream.
+ string SeventiesBg(){return dark?"#1B120D":"#F3E6D1";}
+ string SeventiesWallFile()
+ {
+  string bg=SeventiesBg();string op=dark?".62":"1";
+  string[] col={"#7A3E1D","#C4512A","#E8792C","#F2A93B","#F6CF6B"};int[] rad={496,416,336,256,176};
+  var sb=new System.Text.StringBuilder();
+  sb.Append("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1920\" height=\"1080\" viewBox=\"0 0 1920 1080\"><defs><clipPath id=\"h\"><rect width=\"1920\" height=\"612\"/></clipPath></defs>");
+  sb.Append("<rect width=\"1920\" height=\"1080\" fill=\""+bg+"\"/>");
+  sb.Append("<g clip-path=\"url(#h)\" opacity=\""+op+"\">");
+  for(int i=0;i<col.Length;i++)sb.Append("<circle cx=\"1540\" cy=\"612\" r=\""+rad[i]+"\" fill=\""+col[i]+"\"/>");
+  int[] sy={566,532,500,470,442,416},sh={14,12,10,8,6,4};
+  for(int i=0;i<sy.Length;i++)sb.Append("<rect x=\"900\" y=\""+sy[i]+"\" width=\"1020\" height=\""+sh[i]+"\" fill=\""+bg+"\"/>");
+  sb.Append("</g>");
+  sb.Append("</svg>");
+  return WallFile("seventies3"+(dark?"-d":"-l"),sb.ToString());
+ }
  string AuroraWallFile()
  {
   var a=(dark?accentDark:accentLight)[prefAccent];
@@ -2672,7 +2661,7 @@ public sealed class QuietHome : NUIApplication
    Add(new View{Size2D=new Size2D(1920,1080),BackgroundColor=dark?new Color(.03f,.04f,.07f,.78f):new Color(.97f,.97f,.98f,.80f)});
    return;
   }
-  string file=prefWall==1?WeatherWallFile():prefWall==3?AuroraWallFile():"";
+  string file=prefWall==1?WeatherWallFile():prefWall==3?AuroraWallFile():prefWall==4?SeventiesWallFile():"";
   if(file!=""){Add(new ImageView{ResourceUrl=file,Size2D=new Size2D(1920,1080)});return;}
   Add(new ImageView{ResourceUrl=Root+"free-background.svg",Size2D=new Size2D(1920,1080)});
   if(dark)Add(new View{Size2D=new Size2D(1920,1080),BackgroundColor=new Color(.04f,.05f,.08f,.93f)});
@@ -2699,16 +2688,19 @@ public sealed class QuietHome : NUIApplication
  string SensorNum(string id,string format){string v;double d;return haSensor.TryGetValue(id,out v)&&double.TryParse(v,NumberStyles.Float,CultureInfo.InvariantCulture,out d)?d.ToString(format,CultureInfo.InvariantCulture).Replace('.',','):"--";}
  void BuildHomeSensors()
  {
-  var card=Panel(816,724,1024,96,Sf(1,1,1,.92f),24);
-  string[] cap={"SALON","CHAMBRE","ÉLECTRICITÉ · DERNIER RELEVÉ"};int[] xs={32,330,628};homeSensorValue=new TextLabel[3];
-  for(int i=0;i<3;i++){card.Add(Label(cap[i],xs[i],12,380,24,15,muted,"Semibold"));homeSensorValue[i]=Label("",xs[i],38,380,46,30,ink,"Semibold");card.Add(homeSensorValue[i]);}
+  int x=InfoX(4),y=infoY,w=infoW,h=infoH;
+  var card=InfoTile(4);
+  card.Add(Label("MAISON",22,14,w-44,28,18,muted,"Semibold"));
+  string[] cap={"Salon","Chambre","Électricité"};homeSensorValue=new TextLabel[3];
+  for(int i=0;i<3;i++){card.Add(Label(cap[i],22,50+i*42,120,36,20,muted,"Medium"));homeSensorValue[i]=Label("",130,50+i*42,w-152,36,21,ink,"Semibold");homeSensorValue[i].HorizontalAlignment=HorizontalAlignment.End;card.Add(homeSensorValue[i]);}
+  slots.Add(new Slot{Card=card,Name="Maison",Action="page:5",Description="Température, humidité, électricité · OK pour la page Maison",Row=-2,X=x,Y=y,W=w,H=h});
   UpdateHomeSensors();
  }
  void UpdateHomeSensors()
  {
   if(homeSensorValue==null)return;
-  homeSensorValue[0].Text=SensorNum("sensor.salon_sensor_temperature","0.0")+"°   "+SensorNum("sensor.salon_sensor_humidite","0")+" %";
-  homeSensorValue[1].Text=SensorNum("sensor.chambre_temperature_temperature","0.0")+"°   "+SensorNum("sensor.chambre_temperature_humidite","0")+" %";
+  homeSensorValue[0].Text=SensorNum("sensor.salon_sensor_temperature","0.0")+"° · "+SensorNum("sensor.salon_sensor_humidite","0")+" %";
+  homeSensorValue[1].Text=SensorNum("sensor.chambre_temperature_temperature","0.0")+"° · "+SensorNum("sensor.chambre_temperature_humidite","0")+" %";
   string linky="--";foreach(var kv in haSensor)if(kv.Key.StartsWith("sensor.linky_")&&kv.Key.EndsWith("_dernier_releve"))linky=SensorNum(kv.Key,"0.0");
   homeSensorValue[2].Text=linky+" kWh";
  }
@@ -2875,6 +2867,7 @@ public sealed class QuietHome : NUIApplication
     plexItems.Clear();plexItems.AddRange(list);mediaLoaded=true;
    }
   }}catch{}
+  if(heroDemo&&plexItems.Count>0)ApplyHeroDemo();
   UpdateHero();
   bool idle=editing==""&&!coverPopupOpen&&!newsMenuOpen&&!factDetailOpen&&!forecastDetailOpen&&!lineDetailOpen;
   if(page==8&&(itemsChanged||nowChanged)&&idle)RebuildKeepFocus();
@@ -2897,21 +2890,48 @@ public sealed class QuietHome : NUIApplication
   DateTime t;if(np.State=="playing"&&DateTime.TryParse(np.Updated,CultureInfo.InvariantCulture,DateTimeStyles.RoundtripKind,out t))pos+=(DateTime.UtcNow-t.ToUniversalTime()).TotalSeconds;
   return np.Dur>0?Math.Min(pos,np.Dur):pos;
  }
+ bool heroDemo;
+ // Test entry only (show:herodemo): pretend a Plex title is playing so the full-screen backdrop can be checked.
+ void ApplyHeroDemo(){heroDemo=false;var it=plexItems.FirstOrDefault(x=>x.Image!="");if(it==null)return;nowPlaying=new NowItem{Source="Apple TV",App="Plex",Title=it.Title,Sub=it.Sub,State="playing",Image=it.Image,Dur=5400,Pos=2100,Updated=""};BuildPage();}
  void UpdateHero()
  {
   if(heroTitle==null)return;var np=nowPlaying;
+  string art=np!=null&&np.Image!=""&&File.Exists(np.Image)?np.Image:"";
+  bool onImage=art!="";
+  if(heroBackdrop!=null){heroBackdrop.Opacity=onImage?1:0;if(onImage&&heroBackdropImage.ResourceUrl!=art)heroBackdropImage.ResourceUrl=art;}
+  var big=onImage?white:ink;var soft=onImage?new Color(1,1,1,.82f):muted;
+  heroTop.TextColor=soft;heroTitle.TextColor=big;heroSub.TextColor=soft;heroTime.TextColor=soft;
   if(np==null){
-   heroTop.Text="ENTRÉE ACTIVE";heroTitle.Text="Apple TV";heroTitle.MultiLine=false;heroTitle.PixelSize=72;heroTitle.Position2D=new Position2D(40,124);heroTitle.Size2D=new Size2D(560,100);
-   heroSub.Text="Passer sur HDMI 1";heroSub.PixelSize=30;heroSub.Position2D=new Position2D(46,246);heroBar.Opacity=0;heroTime.Text="";SetHeroArt("");return;
+   heroTop.Text="ENTRÉE ACTIVE · HDMI 1";heroTitle.Text="Apple TV";heroTitle.PixelSize=88;heroSub.Text="Rien en lecture";
+   heroBar.Opacity=0;heroTime.Text="";if(heroButton!=null)heroButton.Text="Passer sur l’Apple TV";SetHeroArt("");return;
   }
   heroTop.Text=(np.State=="playing"?"EN LECTURE":"EN PAUSE")+(np.App!=""?" · "+np.App.ToUpperInvariant():"");
-  string title=Clip(np.Title,30);bool twoLines=title.Length>15;
-  heroTitle.Text=title;heroTitle.MultiLine=true;heroTitle.LineWrapMode=LineWrapMode.Word;heroTitle.Ellipsis=false;heroTitle.VerticalAlignment=VerticalAlignment.Top;
-  heroTitle.PixelSize=twoLines?42:56;heroTitle.Position2D=new Position2D(40,108);heroTitle.Size2D=new Size2D(366,twoLines?112:76);
-  heroSub.Text=Clip(np.Sub,30);heroSub.PixelSize=24;heroSub.Position2D=new Position2D(44,twoLines?228:192);heroSub.Size2D=new Size2D(362,40);
-  if(np.Dur>60){double pos=NowPosition();heroBar.Opacity=1;heroFill.Size2D=new Size2D((int)(340*Math.Max(0,Math.Min(1,pos/np.Dur))),6);int left=(int)Math.Round((np.Dur-pos)/60);heroTime.Text=left<=0?"Bientôt fini":left>=60?"Reste "+left/60+" h "+(left%60).ToString("00"):"Reste "+left+" min";}
-  else{heroBar.Opacity=0;heroTime.Text=np.Source=="Apple TV"?"OK · passer sur l’Apple TV":"";}
-  SetHeroArt(np.Image!=""&&File.Exists(np.Image)?np.Image:"");
+  string title=Clip(np.Title,34);heroTitle.Text=title;heroTitle.PixelSize=title.Length>22?64:88;
+  heroSub.Text=Clip(np.Sub,60);
+  if(np.Dur>60){double pos=NowPosition();heroBar.Opacity=1;heroBar.BackgroundColor=onImage?new Color(1,1,1,.28f):Sf(.84f,.86f,.9f,1);heroFill.BackgroundColor=onImage?white:accent;heroFill.Size2D=new Size2D((int)(420*Math.Max(0,Math.Min(1,pos/np.Dur))),6);int left=(int)Math.Round((np.Dur-pos)/60);heroTime.Text=left<=0?"Bientôt fini":left>=60?"Reste "+left/60+" h "+(left%60).ToString("00"):"Reste "+left+" min";}
+  else{heroBar.Opacity=0;heroTime.Text="";}
+  if(heroButton!=null)heroButton.Text=np.Source=="Apple TV"?"Revenir à l’Apple TV":"Ouvrir l’Apple TV";
+  SetHeroArt(art);
+ }
+ // Full-screen backdrop for the Accueil: the artwork of what is playing, enlarged soft, darkened on the left for the title
+ // and fading into the page under the hero so the rows stay on the normal background.
+ void BuildHeroBackdrop()
+ {
+  heroBackdrop=Add(new View{Size2D=new Size2D(1920,1080),Opacity=0});
+  heroBackdropImage=new ImageView{Size2D=new Size2D(1920,1080),FittingMode=FittingModeType.ScaleToFill,DesiredWidth=160,DesiredHeight=90};heroBackdrop.Add(heroBackdropImage);
+  string scrim=HeroScrimFile();if(scrim!="")heroBackdrop.Add(new ImageView{ResourceUrl=scrim,Size2D=new Size2D(1920,1080)});
+ }
+ string HeroScrimFile()
+ {
+  try{
+   string bg=prefWall==4?SeventiesBg():dark?"#0B0D14":"#EEF0F4";
+   string file=System.IO.Path.Combine(Current.DirectoryInfo.Data,"hero-scrim2-"+(dark?"dark":"light")+(prefWall==4?"-70":"")+".svg");
+   if(!File.Exists(file))File.WriteAllText(file,"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1920\" height=\"1080\" viewBox=\"0 0 1920 1080\"><defs>"
+    +"<linearGradient id=\"l\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000\" stop-opacity=\".78\"/><stop offset=\".55\" stop-color=\"#000\" stop-opacity=\".25\"/><stop offset=\"1\" stop-color=\"#000\" stop-opacity=\".05\"/></linearGradient>"
+    +"<linearGradient id=\"b\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\".44\" stop-color=\""+bg+"\" stop-opacity=\"0\"/><stop offset=\".55\" stop-color=\""+bg+"\" stop-opacity=\".94\"/><stop offset=\".60\" stop-color=\""+bg+"\" stop-opacity=\"1\"/></linearGradient></defs>"
+    +"<rect width=\"1920\" height=\"1080\" fill=\"url(#l)\"/><rect width=\"1920\" height=\"1080\" fill=\"url(#b)\"/></svg>");
+   return file;
+  }catch{return "";}
  }
  static string Clip(string s,int max)
  {
@@ -2922,7 +2942,8 @@ public sealed class QuietHome : NUIApplication
  {
   if(heroArt==null||path==heroArtPath)return;heroArtPath=path;
   while(heroArt.ChildCount>0){var child=heroArt.GetChildAt(0);heroArt.Remove(child);child.Dispose();}
-  if(path!="")heroArt.Add(new ImageView{ResourceUrl=path,Size2D=new Size2D(246,170),FittingMode=FittingModeType.ScaleToFill,SamplingMode=SamplingModeType.BoxThenLanczos,DesiredWidth=492,DesiredHeight=340,CornerRadius=new Vector4(9,9,9,9)});
+  if(path!="")heroArt.Add(new ImageView{ResourceUrl=path,Size2D=new Size2D(464,293),FittingMode=FittingModeType.ScaleToFill,SamplingMode=SamplingModeType.BoxThenLanczos,DesiredWidth=928,DesiredHeight=586});
+  else heroArt.Add(new ImageView{ResourceUrl=Root+"hero-apple-tv.svg",Size2D=new Size2D(464,293)});
  }
  View MediaCard(int x,int y,int w,int h,string image,bool fit,string badge,string placeholder="PLEX")
  {
@@ -3302,7 +3323,7 @@ public sealed class QuietHome : NUIApplication
  void ReceiveRain(string json)
  {
   try{using(var doc=JsonDocument.Parse(json)){var list=new List<KeyValuePair<string,double>>();foreach(var q in doc.RootElement.EnumerateArray())list.Add(new KeyValuePair<string,double>(q[0].GetString()??"",q[1].GetDouble()));if(list.Count>0){rainSlots.Clear();rainSlots.AddRange(list);}}}catch{}
-  if(weatherRain!=null){weatherRain.Text=RainText();weatherRain.TextColor=RainColor();}
+  if(weatherRain!=null){weatherRain.Text=RainText();weatherRain.TextColor=RainColor();ShowRainLine();}
  }
  // Rain in the coming hour, from the 15-minute forecast (first step = the current quarter of an hour).
  string RainText()
@@ -3312,6 +3333,10 @@ public sealed class QuietHome : NUIApplication
   for(int i=1;i<=4;i++)if(rainSlots[i].Value>=0.1)return "Pluie vers "+rainSlots[i].Key+" · "+rainSlots.Skip(i).Take(4).Sum(x=>x.Value).ToString("0.0",frCulture)+" mm";
   return "Pas de pluie dans l’heure";
  }
+ static string OneLine(string t){return (t??"").Replace("\n"," ").Replace("  "," ").Trim();}
+ bool RainSoon(){return rainSlots.Count>=5&&rainSlots.Take(5).Any(x=>x.Value>=0.1);}
+ // Weather tile: the rain line takes the place of max/min when rain is coming within the hour.
+ void ShowRainLine(){if(weatherRain==null||weatherRange==null)return;bool r=RainSoon();weatherRain.Opacity=r?1:0;weatherRange.Opacity=r?0:1;}
  Color RainColor(){return rainSlots.Count>=5&&rainSlots.Take(5).Any(x=>x.Value>=0.1)?new Color(.18f,.50f,.93f,1):muted;}
  // Keeps BelAir's helper listening for banners (Home Assistant messages, Félix, rain) whatever is on screen.
  void SendWatch()
@@ -3606,7 +3631,7 @@ public sealed class QuietHome : NUIApplication
    if(r==0)r=app_control_send_launch_request(c,IntPtr.Zero,IntPtr.Zero);
   }finally{app_control_destroy(c);}}
   if(r!=0){
-   if(weather){weatherText="Paris 12e · météo indisponible";weatherConditionText="Indisponible";weatherTemperatureText="--°";weatherHigh="";weatherLow="";if(weatherCondition!=null)weatherCondition.Text=weatherConditionText;if(weatherTemperature!=null)weatherTemperature.Text=weatherTemperatureText;if(weatherRange!=null)weatherRange.Text=WeatherRange();DrawWeatherIcon();}
+   if(weather){weatherText="Paris 12e · météo indisponible";weatherConditionText="Indisponible";weatherTemperatureText="--°";weatherHigh="";weatherLow="";if(weatherCondition!=null)weatherCondition.Text=OneLine(weatherConditionText);if(weatherTemperature!=null)weatherTemperature.Text=weatherTemperatureText;if(weatherRange!=null)weatherRange.Text=WeatherRange();DrawWeatherIcon();}
    if(metro){metroAvailable=false;metroDepartures.Clear();UpdateMetroWidget();if(page==4&&!lineDetailOpen)BuildPage();}
    if(traffic){trafficAvailable=false;trafficHasAlert=false;UpdateMetroWidget();if(page==4)BuildPage();}
    if(news&&newsSections.Count==0&&newsTopTitle!=null)newsTopTitle.Text="ACTUALITÉS   ⌄";
