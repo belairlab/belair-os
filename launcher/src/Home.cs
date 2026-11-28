@@ -36,12 +36,12 @@ public sealed class QuietHome : NUIApplication
  DateTime lastMediaRequest=DateTime.MinValue,lastHubRequest=DateTime.MinValue,lastFelixRequest=DateTime.MinValue;
  TextLabel heroTop,heroTitle,heroSub,heroTime;View heroArt,heroBar,heroFill;string heroArtPath="";
  readonly Dictionary<string,string> felix=new Dictionary<string,string>();readonly List<string[]> felixButtons=new List<string[]>();string felixMap="",felixStamp="";bool felixLoaded;
- string prefTheme="auto",briefDate="";int prefAccent,prefWall;bool prefBrief=true;string wallKind="";
+ string prefTheme="auto",briefDate="";int prefAccent,prefWall;bool prefBrief=true,prefRotate;string wallKind="";
  View briefRoot;Tizen.NUI.Timer briefTimer;readonly Dictionary<string,TextLabel[]> briefCards=new Dictionary<string,TextLabel[]>();TextLabel briefClock;
  static readonly string[] accentNames={"Indigo","Bleu","Vert","Ambre","Rose","Graphite","Rouille"};
  static readonly float[][] accentLight={new[]{.24f,.29f,.72f},new[]{.04f,.42f,.84f},new[]{.09f,.50f,.33f},new[]{.76f,.43f,.04f},new[]{.80f,.20f,.45f},new[]{.25f,.27f,.31f},new[]{.76f,.31f,.15f}};
  static readonly float[][] accentDark={new[]{.45f,.55f,1f},new[]{.36f,.66f,1f},new[]{.35f,.82f,.58f},new[]{1f,.70f,.30f},new[]{1f,.50f,.68f},new[]{.62f,.66f,.74f},new[]{.98f,.56f,.29f}};
- static readonly string[] wallNames={"Classique","Météo","Affiche","Aurore","Années 70"};
+ static readonly string[] wallNames={"Classique","Météo","Affiche","Aurore","Années 70","Synthwave","Dunes","Bauhaus","Océan","Rotation"};
  readonly List<Slot> slots=new List<Slot>();
  readonly List<View> scene=new List<View>();
  readonly Dictionary<string,CachedArtwork> artworkCache=new Dictionary<string,CachedArtwork>();
@@ -243,7 +243,7 @@ public sealed class QuietHome : NUIApplication
   facts=new List<string>(randomFacts);factIndex=new Random(Environment.TickCount).Next(facts.Count);lastFactUpdate=DateTime.Now;
   RefreshSource();selected=SourceIndex();BuildPage();
   clockTimer=new Tizen.NUI.Timer(30000);
-  clockTimer.Tick+=(s,e)=>{if(clock!=null)clock.Text=DateTime.Now.ToString("HH:mm");UpdateWorldClock();if(DateTime.Now-lastGuard>=TimeSpan.FromMinutes(10))UpdateGuard();if(briefClock!=null)briefClock.Text=DateTime.Now.ToString("HH:mm");if(WantDark()!=dark){ApplyTheme();BuildPage();}else if(prefWall==1&&WallKind()!=wallKind&&editing==""&&!coverPopupOpen)BuildPage();if(!isPaused&&ambientRoot==null&&briefRoot==null&&editing==""&&(DateTime.Now-lastInput).TotalSeconds>=AmbientDelay())OpenAmbient();RequestDue();UpdateHero();if(page==0&&!factDetailOpen&&DateTime.Now-lastFactUpdate>=TimeSpan.FromMinutes(15))RotateFact();return true;};clockTimer.Start();RequestHomeData();lastSensorRequest=DateTime.Now;RequestHaStates();MaybeBrief();SendWatch();WriteState("created");
+  clockTimer.Tick+=(s,e)=>{if(clock!=null)clock.Text=DateTime.Now.ToString("HH:mm");UpdateWorldClock();if(DateTime.Now-lastGuard>=TimeSpan.FromMinutes(10))UpdateGuard();if(briefClock!=null)briefClock.Text=DateTime.Now.ToString("HH:mm");if(WantDark()!=dark){ApplyTheme();BuildPage();}else if(prefWall==1&&WallKind()!=wallKind&&editing==""&&!coverPopupOpen)BuildPage();if(prefRotate&&prefWall!=RotWall()&&editing==""&&!lightOpen&&!appearOpen&&!coverPopupOpen&&!newsMenuOpen&&!pictureOpen&&!cleanOpen){prefWall=RotWall();SavePrefs();ApplyTheme();BuildPage();}if(!isPaused&&ambientRoot==null&&briefRoot==null&&editing==""&&(DateTime.Now-lastInput).TotalSeconds>=AmbientDelay())OpenAmbient();RequestDue();UpdateHero();if(page==0&&!factDetailOpen&&DateTime.Now-lastFactUpdate>=TimeSpan.FromMinutes(15))RotateFact();return true;};clockTimer.Start();RequestHomeData();lastSensorRequest=DateTime.Now;RequestHaStates();MaybeBrief();SendWatch();WriteState("created");
  }
  protected override void OnResume(){base.OnResume();isPaused=false;lastInput=DateTime.Now;clockTimer?.Start();UpdateGuard();if(tabs!=null&&WantDark()!=dark){ApplyTheme();BuildPage();}bool themeDue=WantDark()!=dark;if(themeDue)ApplyTheme();bool rebuild=(themeDue||usageDirty&&(page==0||page==1))&&tabs!=null;usageDirty=false;if(rebuild)BuildPage();if(page==6)StartSystemTimer();RefreshSource();if(tabs!=null&&page==2){RefreshSettings();UpdateFocus(false);}RequestDue();MaybeBrief();SendWatch();WriteState("resumed");}
  protected override void OnAppControlReceived(AppControlReceivedEventArgs e)
@@ -268,7 +268,7 @@ public sealed class QuietHome : NUIApplication
   else if(requested!=null&&requested.StartsWith("show:findfocus:")&&Demo()){page=11;area=1;findFocus="device_tracker.demo_"+requested.Substring(15);BuildPage();}
   else if(requested=="show:infos"){page=0;homeShelf=1;area=4;selected=0;BuildPage();var r=Row(-2);if(r.Count>0)selected=r[0];UpdateFocus(false);}
   else if(requested=="show:herodemo"){page=0;area=1;selected=0;CloseOverlays();heroDemo=true;if(plexItems.Count==0)RequestExtra(true,true,false);else ApplyHeroDemo();}
-  else if(requested!=null&&requested.StartsWith("show:pref:")){var pp=requested.Substring(10).Split(':');int pv;if(pp.Length==2&&int.TryParse(pp[1],out pv)){if(pp[0]=="wall")prefWall=Math.Max(0,Math.Min(wallNames.Length-1,pv));else if(pp[0]=="accent")prefAccent=Math.Max(0,Math.Min(accentNames.Length-1,pv));SavePrefs();ApplyTheme();BuildPage();}}
+  else if(requested!=null&&requested.StartsWith("show:pref:")){var pp=requested.Substring(10).Split(':');int pv;if(pp.Length==2&&int.TryParse(pp[1],out pv)){if(pp[0]=="wall")SetWall(Math.Min(rotateIndex,pv));else if(pp[0]=="accent")prefAccent=Math.Max(0,Math.Min(accentNames.Length-1,pv));SavePrefs();ApplyTheme();BuildPage();}}
   else if(requested=="show:appearance"){page=2;area=1;CloseOverlays();appearOpen=true;appearRow=1;appearCol=prefWall;BuildPage();}
   else if(requested=="show:close"){CloseBrief(false);pictureOpen=false;cleanOpen=false;BuildPage();}
   else if(requested=="show:picture"){page=2;area=1;selected=3;BuildPage();OpenPicture();}
@@ -1111,7 +1111,7 @@ public sealed class QuietHome : NUIApplication
    var card=Panel(x+w/2,y+h/2,w,h,HexColor(app.Background),18);
    card.PivotPoint=new Position(.5f,.5f,.5f);card.PositionUsesPivotPoint=true;
    AddAppArtwork(card,app,w,h);
-   card.Add(new ImageView{ResourceUrl=Root+"card-glass.svg",Size2D=new Size2D(w,h)});
+   if(dark){card.BorderlineWidth=1;card.BorderlineColor=GlassEdge();}else card.Add(new ImageView{ResourceUrl=Root+"card-glass.svg",Size2D=new Size2D(w,h)});
    var ring=new View{Size2D=new Size2D(w,h),BackgroundColor=new Color(0,0,0,0),CornerRadius=new Vector4(18,18,18,18),BorderlineWidth=4,BorderlineColor=accent,Opacity=0};
    card.Add(ring);
    var label=Text(app.Name,x,y+h+14,w,38,27,ink,"Semibold");
@@ -1140,6 +1140,13 @@ public sealed class QuietHome : NUIApplication
    card.BackgroundColor=LogoTileBg();AddThemedLogo(card,dl,w,h);
    return;
   }
+  string tg=app.Utility?null:AppGlyph(app.Id);
+  if(tg!=null&&appGlyphSize.TryGetValue(tg,out var gs)){
+   card.BackgroundColor=LogoTileBg();
+   double bw=w*.6,bh=h*(tg=="pathe"||tg=="samsung-store"?.62:tg=="france-tv"?.16:.46);double k=Math.Min(bw/gs[0],bh/gs[1]);int iw=(int)(gs[0]*k),ih=(int)(gs[1]*k);
+   card.Add(new ImageView{ResourceUrl=Root+"app-"+tg+(dark?"-d":"-l")+".png",Position2D=new Position2D((w-iw)/2,(h-ih)/2),Size2D=new Size2D(iw,ih),SamplingMode=SamplingModeType.BoxThenLanczos,DesiredWidth=iw*2,DesiredHeight=ih*2});
+   return;
+  }
   string ai=app.Utility?null:AppIconFile(app.Id);
   if(ai!=null){
    if(AppIconCover(app.Id))
@@ -1151,19 +1158,19 @@ public sealed class QuietHome : NUIApplication
    }
    return;
   }
+  // any other app: its name on the same theme tile
+  card.BackgroundColor=LogoTileBg();
   if(!app.Utility){
-   var cached=GetArtwork(app,w,h);
-   if(cached.Image.LoadingStatus!=ImageView.LoadingStatusType.Ready)pageArtworkCold++;
-   cached.Parent.Remove(cached.Image);card.Add(cached.Image);cached.Parent=card;
-   float size=Math.Min(38f,Math.Min(h*.30f,(w-32f)/(Math.Max(1,app.Name.Length)*.58f)));
-   var title=Label(app.Name,12,0,w-24,h,size,TileTitleColor(app.Background),"Semibold");
-   title.HorizontalAlignment=HorizontalAlignment.Center;card.Add(title);
+   float size=Math.Min(34f,Math.Min(h*.26f,(w-40f)/(Math.Max(1,app.Name.Length)*.58f)));
+   var title=Label(app.Name,16,0,w-32,h,size,ink,"Semibold");title.HorizontalAlignment=HorizontalAlignment.Center;card.Add(title);
   }
   if(app.Utility){
-   card.Add(new View{Position2D=new Position2D(w/2-28,h/2-2),Size2D=new Size2D(56,4),BackgroundColor=inkFixed});
-   card.Add(new View{Position2D=new Position2D(w/2-2,h/2-28),Size2D=new Size2D(4,56),BackgroundColor=inkFixed});
+   card.Add(new View{Position2D=new Position2D(w/2-28,h/2-2),Size2D=new Size2D(56,4),BackgroundColor=ink});
+   card.Add(new View{Position2D=new Position2D(w/2-2,h/2-28),Size2D=new Size2D(4,56),BackgroundColor=ink});
   }
  }
+ static readonly Dictionary<string,int[]> appGlyphSize=new Dictionary<string,int[]>{{"disney",new[]{348,187}},{"oqee",new[]{388,209}},{"france-tv",new[]{90,16}},{"arte",new[]{663,164}},{"pathe",new[]{215,283}},{"samsung-store",new[]{141,189}}};
+ static string AppGlyph(string id){switch(id){case "MCmYXNxgcu.DisneyPlus":return "disney";case "znCs95n93Q.OqeeTV":return "oqee";case "QY16tZ64E3.francetv":return "france-tv";case "aLlph042JZ.arte":return "arte";case "WG2lklBRNT.SmartTVNextGen":return "pathe";case "com.samsung.tv.store":return "samsung-store";}return null;}
  static string DockLogo(string id)
  {
   switch(id){
@@ -1429,7 +1436,8 @@ public sealed class QuietHome : NUIApplication
    chip.Add(Label("EN DIRECT",30,0,92,30,14,white,"Semibold"));
   }
   else{card.BackgroundColor=LogoTileBg();AddThemedLogo(card,icon,W,H);}
-  string glass=W==244?Root+"dock-glass.svg":GlassFile(W,H);if(glass!="")card.Add(new ImageView{ResourceUrl=glass,Size2D=new Size2D(W,H)});
+  if(dark){card.BorderlineWidth=1;card.BorderlineColor=GlassEdge();}
+  else{string glass=W==244?Root+"dock-glass.svg":GlassFile(W,H);if(glass!="")card.Add(new ImageView{ResourceUrl=glass,Size2D=new Size2D(W,H)});}
   slots.Add(new Slot{Card=card,Name=label,Action=action,Description=label,Row=1,X=cx-W/2,Y=cy-H/2,W=W,H=H});
  }
  // ---- live channel on the Apple TV: CANAL+ channel page link, then Down and OK on its "direct" entry (France 2 only for now) ----
@@ -1451,7 +1459,7 @@ public sealed class QuietHome : NUIApplication
  // App logos follow the theme (like dark / light app icons): brand logo on a dark tile at night, on a white tile by day.
  // The logos are the official artwork with its background cut out; white wordmarks turn dark on the light tile.
  static readonly Dictionary<string,int[]> logoSize=new Dictionary<string,int[]>{{"youtube",new[]{353,246}},{"netflix",new[]{236,65}},{"plex",new[]{185,301}},{"canal-plus",new[]{375,70}},{"apple-tv",new[]{195,99}},{"prime",new[]{312,312}}};
- Color LogoTileBg(){return dark?new Color(.114f,.106f,.122f,1):new Color(1,1,1,1);}
+ Color LogoTileBg(){if(!dark)return new Color(1,1,1,1);var c=HexColor(prefWall>=4?WallBase():"#0B0D14");return new Color(Math.Min(1,c.R+.075f),Math.Min(1,c.G+.072f),Math.Min(1,c.B+.07f),.95f);}
  void AddThemedLogo(View card,string icon,int w,int h)
  {
   if(!logoSize.TryGetValue(icon,out var sz))return;
@@ -1722,7 +1730,7 @@ public sealed class QuietHome : NUIApplication
  // ---- light settings as a side sheet (BelAir OS 2 mockup): header with switch, brightness bar, then scenes, music, options, moods, colours ----
  int lightScroll;readonly Dictionary<int,List<int[]>> lightRects=new Dictionary<int,List<int[]>>();
  const int shW=820,shX=1920-40-820,shY=40,shH=1000,shTop=168,shPad=52;
- Color SheetFill(){return dark?new Color(.135f,.12f,.15f,.97f):prefWall==4?new Color(.99f,.97f,.94f,.98f):new Color(.985f,.985f,.99f,.98f);}
+ Color SheetFill(){return dark?new Color(.135f,.12f,.15f,1):prefWall==4?new Color(.99f,.97f,.94f,1):new Color(.985f,.985f,.99f,1);}
  Color ChipFill(){return dark?new Color(1,1,1,.12f):new Color(0,0,0,.055f);}
  void FocusRing(View v,bool f,float radius){v.BorderlineWidth=f?4:0;v.BorderlineColor=dark?white:accent;if(f){v.BoxShadow=new Shadow(30f,new Color(0,0,0,dark?.5f:.22f),new Vector2(0,12));}}
  static int ChipW(string t,int size){return (int)(t.Length*size*.56)+50;}
@@ -2373,7 +2381,7 @@ public sealed class QuietHome : NUIApplication
  string PageTitle(){return page==1?"Applis":page==2?"Réglages":page==3?"Météo":page==4?"Trafic":page==6?"Système":page==7?"Énergie":page==8?"Plex":page==9?"Félix":page==10?"Vélos":page==11?"Localiser":"";}
  // light "liquid glass": what is behind the control is blurred, the control stays translucent
  static void LiquidGlass(View v,float radius=22f){try{v.SetRenderEffect(RenderEffect.CreateBackgroundBlurEffect(radius));}catch{}}
- Color GlassFill(){return dark?new Color(1,1,1,.10f):prefWall==4?new Color(1f,.985f,.96f,.9f):new Color(1,1,1,.66f);}
+ Color GlassFill(){return dark?new Color(1,1,1,.10f):prefWall==4?new Color(1f,.985f,.96f,.9f):prefWall>4?new Color(1,1,1,.88f):new Color(1,1,1,.66f);}
  Color GlassEdge(){return dark?new Color(1,1,1,.20f):new Color(0,0,0,.07f);}
  Color FocusEdge(){return dark?new Color(1,1,1,.88f):new Color(1,1,1,1);}
  readonly Dictionary<View,Color> restBg=new Dictionary<View,Color>();
@@ -2817,29 +2825,35 @@ public sealed class QuietHome : NUIApplication
    int i=line.IndexOf('=');if(i<=0)continue;string key=line.Substring(0,i),v=line.Substring(i+1);int n;
    if(key=="theme"&&(v=="auto"||v=="light"||v=="dark"))prefTheme=v;
    else if(key=="accent"&&int.TryParse(v,out n))prefAccent=Math.Max(0,Math.Min(accentNames.Length-1,n));
-   else if(key=="wall"&&int.TryParse(v,out n))prefWall=Math.Max(0,Math.Min(wallNames.Length-1,n));
+   else if(key=="wall"&&int.TryParse(v,out n))prefWall=Math.Max(0,Math.Min(rotateIndex-1,n));
+   else if(key=="rotate")prefRotate=v=="1";
    else if(key=="brief")prefBrief=v!="0";
    else if(key=="briefDate")briefDate=v;
   }}catch{}
+  if(prefRotate)prefWall=RotWall();
  }
- void SavePrefs(){try{File.WriteAllText(PrefsPath(),"theme="+prefTheme+"\naccent="+prefAccent+"\nwall="+prefWall+"\nbrief="+(prefBrief?"1":"0")+"\nbriefDate="+briefDate+"\n");}catch{}}
+ // "Rotation": the illustrated wallpapers take turns, one per hour
+ const int rotateIndex=9;static readonly int[] rotateWalls={3,4,5,6,7,8};
+ static int RotWall(){return rotateWalls[(int)((DateTime.Now-new DateTime(2026,1,1)).TotalHours)%rotateWalls.Length];}
+ void SetWall(int i){if(i>=rotateIndex){prefRotate=true;prefWall=RotWall();}else{prefRotate=false;prefWall=Math.Max(0,i);}if(prefWall==2&&plexItems.Count==0)RequestExtra(true,true,false);}
+ void SavePrefs(){try{File.WriteAllText(PrefsPath(),"theme="+prefTheme+"\naccent="+prefAccent+"\nwall="+prefWall+"\nrotate="+(prefRotate?"1":"0")+"\nbrief="+(prefBrief?"1":"0")+"\nbriefDate="+briefDate+"\n");}catch{}}
  // ---- Apparence: a side sheet to pick the theme, the wallpaper (with previews) and the accent colour ----
  bool appearOpen;int appearRow,appearCol;
  static readonly string[] themeKeys={"auto","light","dark"},themeNames={"Automatique","Clair","Sombre"},themeHints={"Clair le jour, sombre la nuit","Toujours clair","Toujours sombre"};
- int AppearCurrent(int row){return row==0?Math.Max(0,Array.IndexOf(themeKeys,prefTheme)):row==1?prefWall:prefAccent;}
+ int AppearCurrent(int row){return row==0?Math.Max(0,Array.IndexOf(themeKeys,prefTheme)):row==1?(prefRotate?rotateIndex:prefWall):prefAccent;}
  int AppearCount(int row){return row==0?themeKeys.Length:row==1?wallNames.Length:accentNames.Length;}
  string WallPreview(int i)
  {
   if(i==0)return Root+"free-background.svg";
   int keep=prefWall;string f="";
-  try{prefWall=i;f=i==1?WeatherWallFile():i==2?WallPoster():i==3?AuroraWallFile():SeventiesWallFile();}finally{prefWall=keep;}
+  try{prefWall=i>=rotateIndex?RotWall():i;f=i==2?WallPoster():ArtWallFile();}finally{prefWall=keep;}
   return f??"";
  }
  void BuildAppearance()
  {
   Add(new View{Size2D=new Size2D(1920,1080),BackgroundColor=new Color(0,0,0,dark?.45f:.25f)});
   int pw=1160,ph=1000,px=1920-40-pw,py=40;
-  var sheet=Panel(px,py,pw,ph,dark?new Color(.10f,.11f,.15f,.96f):new Color(.99f,.98f,.96f,.97f),44);sheet.BorderlineWidth=1;sheet.BorderlineColor=GlassEdge();sheet.BoxShadow=new Shadow(80f,new Color(0,0,0,.35f),new Vector2(0,30));
+  var sheet=Panel(px,py,pw,ph,dark?new Color(.10f,.11f,.15f,1):new Color(.99f,.98f,.96f,1),44);sheet.BorderlineWidth=1;sheet.BorderlineColor=GlassEdge();sheet.BoxShadow=new Shadow(80f,new Color(0,0,0,.35f),new Vector2(0,30));
   sheet.Add(Label("Apparence",56,44,800,56,44,ink,"Display"));
   sheet.Add(Label("Le choix s’applique tout de suite.",58,104,800,32,21,muted,"Medium"));
   int y=170;
@@ -2853,15 +2867,16 @@ public sealed class QuietHome : NUIApplication
      c.Add(Label(themeNames[i],22,12,cw-44,38,26,act?white:ink,"Semibold"));c.Add(Label(themeHints[i],22,52,cw-44,28,19,act?new Color(1,1,1,.85f):muted,"Medium"));}
     y+=96+40;
    }else if(row==1){
-    int cw=(inner-(n-1)*gap)/n,ch=cw*9/16;
-    for(int i=0;i<n;i++){bool f=appearRow==row&&appearCol==i,act=cur==i;
-     var c=new View{Position2D=new Position2D(56+i*(cw+gap),y),Size2D=new Size2D(cw,ch),CornerRadius=new Vector4(18,18,18,18),BackgroundColor=Sf(.85f,.85f,.88f,1),BorderlineWidth=f?5:act?3:0,BorderlineColor=f?accent:ink,ClippingMode=ClippingModeType.ClipChildren};sheet.Add(c);
+    int cols=5,cw=(inner-(cols-1)*gap)/cols,ch=cw*9/16,rowsN=(n+cols-1)/cols;
+    for(int i=0;i<n;i++){bool f=appearRow==row&&appearCol==i,act=cur==i;int gx=56+(i%cols)*(cw+gap),gy=y+(i/cols)*(ch+54);
+     var c=new View{Position2D=new Position2D(gx,gy),Size2D=new Size2D(cw,ch),CornerRadius=new Vector4(18,18,18,18),BackgroundColor=Sf(.85f,.85f,.88f,1),BorderlineWidth=f?5:act?3:0,BorderlineColor=f?accent:ink,ClippingMode=ClippingModeType.ClipChildren};sheet.Add(c);
      string img=WallPreview(i);
      if(img!="")c.Add(new ImageView{ResourceUrl=img,Size2D=new Size2D(cw,ch),FittingMode=FittingModeType.ScaleToFill,DesiredWidth=cw*2,DesiredHeight=ch*2});
      else{var ph2=Label("Ouvre Plex",0,0,cw,ch,18,muted,"Medium");ph2.HorizontalAlignment=HorizontalAlignment.Center;c.Add(ph2);}
      if(i==0&&dark)c.Add(new View{Size2D=new Size2D(cw,ch),BackgroundColor=new Color(.04f,.05f,.08f,.85f)});
-     var nl=Label((act?"✓ ":"")+wallNames[i],56+i*(cw+gap),y+ch+8,cw,32,21,act?ink:muted,act?"Semibold":"Medium");nl.HorizontalAlignment=HorizontalAlignment.Center;sheet.Add(nl);}
-    y+=(inner-(n-1)*gap)/n*9/16+60;
+     if(i==rotateIndex){var badge=new View{Position2D=new Position2D(cw-58,10),Size2D=new Size2D(48,30),CornerRadius=new Vector4(15,15,15,15),BackgroundColor=new Color(0,0,0,.55f)};c.Add(badge);var bl=Label("1 h",0,0,48,30,17,white,"Semibold");bl.HorizontalAlignment=HorizontalAlignment.Center;badge.Add(bl);}
+     var nl=Label((act?"✓ ":"")+wallNames[i],gx,gy+ch+8,cw,32,21,act?ink:muted,act?"Semibold":"Medium");nl.HorizontalAlignment=HorizontalAlignment.Center;sheet.Add(nl);}
+    y+=rowsN*(ch+54)+16;
    }else{
     int cw=(inner-(n-1)*gap)/n;
     for(int i=0;i<n;i++){bool f=appearRow==row&&appearCol==i,act=cur==i;var a=(dark?accentDark:accentLight)[i];
@@ -2875,11 +2890,13 @@ public sealed class QuietHome : NUIApplication
  void HandleAppearanceKey(string k)
  {
   if(k=="XF86Back"||k=="Back"||k=="Escape"||k=="XF86Exit"){appearOpen=false;BuildPage();return;}
+  if(appearRow==1&&k=="Down"&&appearCol+5<AppearCount(1)){appearCol+=5;BuildPage();return;}
+  if(appearRow==1&&k=="Up"&&appearCol>=5){appearCol-=5;BuildPage();return;}
   if(k=="Up"||k=="Down"){appearRow=Math.Max(0,Math.Min(2,appearRow+(k=="Up"?-1:1)));appearCol=Math.Min(AppearCurrent(appearRow),AppearCount(appearRow)-1);BuildPage();return;}
   if(k=="Left"||k=="Right"){appearCol=Math.Max(0,Math.Min(AppearCount(appearRow)-1,appearCol+(k=="Left"?-1:1)));BuildPage();return;}
   if(k!="Return"&&k!="KP_Enter")return;
   if(appearRow==0)prefTheme=themeKeys[appearCol];
-  else if(appearRow==1){prefWall=appearCol;if(prefWall==2&&plexItems.Count==0)RequestExtra(true,true,false);}
+  else if(appearRow==1)SetWall(appearCol);
   else prefAccent=appearCol;
   SavePrefs();ApplyTheme();BuildPage();WriteState("appearance:"+appearRow+":"+appearCol);
  }
@@ -2887,7 +2904,7 @@ public sealed class QuietHome : NUIApplication
  {
   if(key=="theme")prefTheme=prefTheme=="auto"?"light":prefTheme=="light"?"dark":"auto";
   else if(key=="accent")prefAccent=(prefAccent+1)%accentNames.Length;
-  else if(key=="wall"){prefWall=(prefWall+1)%wallNames.Length;if(prefWall==2&&plexItems.Count==0)RequestExtra(true,true,false);}
+  else if(key=="wall")SetWall(((prefRotate?rotateIndex:prefWall)+1)%wallNames.Length);
   else if(key=="brief")prefBrief=!prefBrief;
   SavePrefs();ApplyTheme();BuildPage();
   notice.Text=key=="wall"&&prefWall==2&&WallPoster()==""?"Affiche en chargement depuis Plex…":"";
@@ -2946,6 +2963,67 @@ public sealed class QuietHome : NUIApplication
  }
  // "Années 70": a striped sunset rising behind the top of the screen (rust, orange, mustard, brown) over warm cream;
  // the lower half stays plain so the rows read well, and the hero backdrop fades into the same cream.
+ static Color WithAlpha(Color c,float a){return new Color(c.R,c.G,c.B,a);}
+ string ArtWallFile(){return prefWall==1?WeatherWallFile():prefWall==3?AuroraWallFile():prefWall==4?SeventiesWallFile():prefWall==5?SynthwaveWallFile():prefWall==6?DunesWallFile():prefWall==7?BauhausWallFile():prefWall==8?OceanWallFile():"";}
+ // base colour of each illustrated wallpaper (page background, hero fade, veil on inner pages)
+ string WallBase(){switch(prefWall){case 4:return SeventiesBg();case 5:return dark?"#140A24":"#F7EEF6";case 6:return dark?"#1A1410":"#F5ECE1";case 7:return dark?"#16171B":"#F2EEE6";case 8:return dark?"#07141C":"#EAF2F5";default:return dark?"#0B0D14":"#EEF0F4";}}
+ // ---- more illustrated wallpapers: the artwork sits on the right half so titles and rows on the left stay clean ----
+ string SynthwaveWallFile()
+ {
+  string bg=WallBase(),op=dark?".72":"1",grid=dark?"#FF4F8B":"#E0559A";
+  var sb=new System.Text.StringBuilder("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1920\" height=\"1080\" viewBox=\"0 0 1920 1080\"><defs>");
+  sb.Append("<linearGradient id=\"sky\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\""+bg+"\"/><stop offset=\"1\" stop-color=\""+(dark?"#3A1250":"#F8D3E4")+"\"/></linearGradient>");
+  sb.Append("<linearGradient id=\"sun\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#FFD35A\"/><stop offset=\".55\" stop-color=\"#FF8A3D\"/><stop offset=\"1\" stop-color=\"#FF3F8E\"/></linearGradient>");
+  sb.Append("<clipPath id=\"h\"><rect width=\"1920\" height=\"640\"/></clipPath></defs>");
+  sb.Append("<rect width=\"1920\" height=\"640\" fill=\"url(#sky)\"/><rect y=\"640\" width=\"1920\" height=\"440\" fill=\""+bg+"\"/>");
+  sb.Append("<g opacity=\""+op+"\"><g clip-path=\"url(#h)\"><circle cx=\"1450\" cy=\"560\" r=\"300\" fill=\"url(#sun)\"/>");
+  int[] sy={600,560,524,492,464},sh={22,18,14,10,7};for(int i=0;i<sy.Length;i++)sb.Append("<rect x=\"1100\" y=\""+sy[i]+"\" width=\"700\" height=\""+sh[i]+"\" fill=\""+(dark?"#2A0E40":"#F8D9E8")+"\"/>");
+  sb.Append("</g><g stroke=\""+grid+"\" stroke-width=\"2\" opacity=\".55\" fill=\"none\"><line x1=\"760\" y1=\"640\" x2=\"1920\" y2=\"640\"/>");
+  int[] gy={664,700,752,824,920,1050};foreach(int y in gy)sb.Append("<line x1=\"760\" y1=\""+y+"\" x2=\"1920\" y2=\""+y+"\"/>");
+  for(int k=-6;k<=6;k++)sb.Append("<line x1=\""+(1450+k*60)+"\" y1=\"640\" x2=\""+(1450+k*330)+"\" y2=\"1080\"/>");
+  sb.Append("</g></g></svg>");
+  return WallFile("synthwave1"+(dark?"-d":"-l"),sb.ToString());
+ }
+ string DunesWallFile()
+ {
+  string bg=WallBase(),op=dark?".7":"1";
+  string[] col=dark?new[]{"#5A3A26","#7A4A2C","#9C5E34","#C27A40"}:new[]{"#E9C9A0","#DDAE78","#CF9156","#B8743C"};
+  var sb=new System.Text.StringBuilder("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1920\" height=\"1080\" viewBox=\"0 0 1920 1080\"><rect width=\"1920\" height=\"1080\" fill=\""+bg+"\"/><g opacity=\""+op+"\">");
+  sb.Append("<circle cx=\"1520\" cy=\"330\" r=\"120\" fill=\""+(dark?"#E8B46A":"#F4C27A")+"\"/>");
+  sb.Append("<path d=\"M700 640 C900 520 1100 500 1300 560 S1700 520 1920 470 V1080 H700 Z\" fill=\""+col[0]+"\"/>");
+  sb.Append("<path d=\"M820 720 C1050 600 1250 640 1450 610 S1780 600 1920 580 V1080 H820 Z\" fill=\""+col[1]+"\"/>");
+  sb.Append("<path d=\"M960 820 C1180 720 1380 760 1580 700 S1840 690 1920 690 V1080 H960 Z\" fill=\""+col[2]+"\"/>");
+  sb.Append("<path d=\"M1120 940 C1320 850 1520 880 1700 820 S1880 810 1920 810 V1080 H1120 Z\" fill=\""+col[3]+"\"/>");
+  sb.Append("</g></svg>");
+  return WallFile("dunes1"+(dark?"-d":"-l"),sb.ToString());
+ }
+ string BauhausWallFile()
+ {
+  string bg=WallBase(),op=dark?".75":"1";
+  string red=dark?"#C9523B":"#E0553A",yel=dark?"#D9A23A":"#F2B33D",blu=dark?"#3D62A8":"#2F5DA8",blk=dark?"#E9E4DA":"#1F1F22";
+  var sb=new System.Text.StringBuilder("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1920\" height=\"1080\" viewBox=\"0 0 1920 1080\"><rect width=\"1920\" height=\"1080\" fill=\""+bg+"\"/><g opacity=\""+op+"\">");
+  sb.Append("<rect x=\"1180\" y=\"180\" width=\"300\" height=\"300\" fill=\""+blu+"\"/>");
+  sb.Append("<circle cx=\"1560\" cy=\"420\" r=\"200\" fill=\""+yel+"\"/>");
+  sb.Append("<path d=\"M1300 700 A170 170 0 0 1 1640 700 Z\" fill=\""+red+"\"/>");
+  sb.Append("<path d=\"M1020 700 L1180 420 L1340 700 Z\" fill=\""+red+"\" opacity=\".9\"/>");
+  sb.Append("<rect x=\"960\" y=\"700\" width=\"860\" height=\"10\" fill=\""+blk+"\"/>");
+  sb.Append("<circle cx=\"1760\" cy=\"190\" r=\"46\" fill=\""+blk+"\"/>");
+  sb.Append("<rect x=\"1700\" y=\"520\" width=\"18\" height=\"180\" fill=\""+blk+"\"/>");
+  sb.Append("</g></svg>");
+  return WallFile("bauhaus1"+(dark?"-d":"-l"),sb.ToString());
+ }
+ string OceanWallFile()
+ {
+  string bg=WallBase(),op=dark?".75":"1";
+  string[] col=dark?new[]{"#0F3A52","#125069","#16687F","#1C8494"}:new[]{"#BFE0EA","#8CC8DA","#55A9C4","#2A86A8"};
+  var sb=new System.Text.StringBuilder("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1920\" height=\"1080\" viewBox=\"0 0 1920 1080\"><rect width=\"1920\" height=\"1080\" fill=\""+bg+"\"/><g opacity=\""+op+"\">");
+  sb.Append("<circle cx=\"1480\" cy=\"360\" r=\"150\" fill=\""+(dark?"#E8E4D2":"#FFD9A0")+"\"/>");
+  for(int i=0;i<4;i++){int y=560+i*110,a=60-i*8;var d=new System.Text.StringBuilder("M760 "+(y+40));
+   for(int x=760;x<1920;x+=160)d.Append(" Q"+(x+40)+" "+(y-a/2+(x/160%2==0?0:a))+" "+(x+80)+" "+y+" T"+(x+160)+" "+(y+20));
+   d.Append(" V1080 H760 Z");sb.Append("<path d=\""+d+"\" fill=\""+col[i]+"\"/>");}
+  sb.Append("</g></svg>");
+  return WallFile("ocean1"+(dark?"-d":"-l"),sb.ToString());
+ }
  string SeventiesBg(){return dark?"#1B120D":"#F3E6D1";}
  string SeventiesWallFile()
  {
@@ -2980,7 +3058,7 @@ public sealed class QuietHome : NUIApplication
   foreach(var item in plexItems)if(item.Image!=""&&File.Exists(item.Image))return item.Image;
   return "";
  }
- string WallpaperPreview(){return prefWall==1?WeatherWallFile():prefWall==2?WallPoster():prefWall==3?AuroraWallFile():Root+"free-background.svg";}
+ string WallpaperPreview(){return prefWall==2?WallPoster():prefWall==0?Root+"free-background.svg":ArtWallFile();}
  void AddWallpaper()
  {
   string poster=prefWall==2?WallPoster():"";
@@ -2989,11 +3067,11 @@ public sealed class QuietHome : NUIApplication
    Add(new View{Size2D=new Size2D(1920,1080),BackgroundColor=dark?new Color(.03f,.04f,.07f,.78f):new Color(.97f,.97f,.98f,.80f)});
    return;
   }
-  string file=prefWall==1?WeatherWallFile():prefWall==3?AuroraWallFile():prefWall==4?SeventiesWallFile():"";
+  string file=ArtWallFile();
   if(file!=""){
    Add(new ImageView{ResourceUrl=file,Size2D=new Size2D(1920,1080)});
    // inner pages: the artwork stays as a ghost so cards and text read cleanly over it
-   if(page!=0||homeShelf==1)Add(new View{Size2D=new Size2D(1920,1080),BackgroundColor=prefWall==4?(dark?new Color(.106f,.071f,.051f,.72f):new Color(.953f,.902f,.82f,.78f)):(dark?new Color(.03f,.04f,.07f,.55f):new Color(.97f,.97f,.98f,.6f))});
+   if(page!=0||homeShelf==1)Add(new View{Size2D=new Size2D(1920,1080),BackgroundColor=prefWall>=4?WithAlpha(HexColor(WallBase()),dark?.72f:.78f):(dark?new Color(.03f,.04f,.07f,.55f):new Color(.97f,.97f,.98f,.6f))});
    return;}
   Add(new ImageView{ResourceUrl=Root+"free-background.svg",Size2D=new Size2D(1920,1080)});
   if(dark)Add(new View{Size2D=new Size2D(1920,1080),BackgroundColor=new Color(.04f,.05f,.08f,.93f)});
@@ -3256,8 +3334,8 @@ public sealed class QuietHome : NUIApplication
  string HeroScrimFile()
  {
   try{
-   string bg=prefWall==4?SeventiesBg():dark?"#0B0D14":"#EEF0F4";
-   string file=System.IO.Path.Combine(Current.DirectoryInfo.Data,"hero-scrim3-"+(dark?"dark":"light")+(prefWall==4?"-70":"")+".svg");
+   string bg=prefWall>=4?WallBase():dark?"#0B0D14":"#EEF0F4";
+   string file=System.IO.Path.Combine(Current.DirectoryInfo.Data,"hero-scrim3-"+(dark?"dark":"light")+(prefWall>=4?"-w"+prefWall:"")+".svg");
    if(!File.Exists(file))File.WriteAllText(file,"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1920\" height=\"1080\" viewBox=\"0 0 1920 1080\"><defs>"
     +"<linearGradient id=\"l\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop offset=\"0\" stop-color=\"#000\" stop-opacity=\".78\"/><stop offset=\".55\" stop-color=\"#000\" stop-opacity=\".25\"/><stop offset=\"1\" stop-color=\"#000\" stop-opacity=\".05\"/></linearGradient>"
     +"<linearGradient id=\"b\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\".52\" stop-color=\""+bg+"\" stop-opacity=\"0\"/><stop offset=\".70\" stop-color=\""+bg+"\" stop-opacity=\".94\"/><stop offset=\".75\" stop-color=\""+bg+"\" stop-opacity=\"1\"/></linearGradient></defs>"
