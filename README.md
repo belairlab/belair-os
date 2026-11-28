@@ -27,7 +27,7 @@ Il est construit sur [Quiet Tizen](docs/quiet-tizen.md) (launcher natif NUI/C#, 
 | **Accueil** | En grand, ce qui est en lecture sur l'Apple TV (titre, progression, affiche et image plein écran en fond), puis les rangées « Regarder » et « Infos » en tuiles de verre : Bourse CAC 40, « Le saviez-vous ? », métro 6 en temps réel, météo, températures intérieures, électricité, heure de Paris et de Buenos Aires, dock d'applis qui s'ouvrent directement sur l'Apple TV (dont **France 2 en direct**) |
 | **Applis** | Toutes les applis installées, avec leurs vraies icônes, triées par usage |
 | **Plex** | Ce qui joue sur l'Apple TV, « Reprendre » (Continuer à regarder, À suivre) et « Ajoutés récemment », lancement direct dans Plex |
-| **Maison** | Scènes, volets, lampes, lampes Govee avec scènes, mode cinéma automatique |
+| **Maison** | Scènes, volets (remplissage selon l'ouverture), lumières façon Centre de contrôle, lampes Govee avec scènes, mode cinéma automatique |
 | **Félix** | Robot aspirateur : carte en direct, état, entretien, nettoyage par pièce et programmes |
 | **Vélos** | Les 4 stations Vélib' les plus proches (vélos mécaniques, électriques, places) et les Lime disponibles sur un plan des rues (Plan IGN) centré sur le domicile ; les flèches parcourent le plan (autonomie de chaque Lime) |
 | **Localiser** | Protégée par un code PIN : les appareils et objets de Localiser (intégration iCloud de Home Assistant) avec lieu, distance, batterie et dernière localisation, sur un plan des rues ; OK centre la carte sur un appareil, un appui long le fait sonner après confirmation |
@@ -112,7 +112,7 @@ La tuile météo annonce la **pluie dans l'heure** (prévision par quart d'heure
 
   ![Mode d'image](docs/screenshots/mode-image.jpg)
 
-- **Thème** automatique (clair du lever au coucher du soleil à Paris), clair ou sombre ; 6 couleurs d'accent ; fonds d'écran Classique, Météo, Affiche Plex, Aurore ou **Années 70** (soleil rétro rayé, crème et rouille).
+- **Apparence** : une feuille dédiée pour choisir le thème (automatique, clair, sombre), le fond d'écran avec aperçus et la couleur d'accent (7 couleurs) ; fonds d'écran Classique, Météo, Affiche Plex, Aurore ou **Années 70** (soleil rétro rayé, crème et rouille).
 - **Économiseur d'écran** pour l'OLED : horloge qui se déplace, météo, températures intérieures, métro.
 
 ![Applis](docs/screenshots/applis.jpg)
