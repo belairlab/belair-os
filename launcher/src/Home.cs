@@ -106,11 +106,11 @@ public sealed class QuietHome : NUIApplication
  DateTime lastHaRequest=DateTime.MinValue;
  bool isPaused;
  bool dark,usageDirty;DateTime lastInput=DateTime.Now,lastSensorRequest=DateTime.MinValue;
- View ambientRoot,ambientBlock;TextLabel ambientClock,ambientDate,ambientInfo,ambientIndoor,ambientMetro;Tizen.NUI.Timer ambientTimer;int ambientStep;
+ View ambientRoot,ambientBlock;TextLabel ambientClock,ambientDate,ambientInfo,ambientIndoor;Tizen.NUI.Timer ambientTimer;int ambientStep;
  readonly Dictionary<string,int> appUse=new Dictionary<string,int>();readonly Dictionary<string,int> appOrder=new Dictionary<string,int>();
  readonly Dictionary<string,string> haSensor=new Dictionary<string,string>();TextLabel[] homeSensorValue;
  static readonly Color inkFixed=new Color(0.114f,0.114f,0.122f,1);
- const string haSensorWanted="sensor.salon_sensor_temperature,sensor.salon_sensor_humidite,sensor.chambre_temperature_temperature,sensor.chambre_temperature_humidite,sensor.linky_*_dernier_releve,vacuum.felix,sensor.felix_etat,sensor.felix_batterie,sensor.felix_fin_du_dernier_nettoyage,sensor.felix_surface_de_nettoyage,"+cinemaAuto;
+ const string haSensorWanted="sensor.salon_sensor_temperature,sensor.presence_salle_de_bain_temperature,sensor.salon_sensor_humidite,sensor.chambre_temperature_temperature,sensor.chambre_temperature_humidite,sensor.linky_*_dernier_releve,vacuum.felix,sensor.felix_etat,sensor.felix_batterie,sensor.felix_fin_du_dernier_nettoyage,sensor.felix_surface_de_nettoyage,"+cinemaAuto;
  static readonly string[] frDays={"dimanche","lundi","mardi","mercredi","jeudi","vendredi","samedi"};
  static readonly string[] frMonths={"janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"};
  readonly Dictionary<string,int> lineStatus=new Dictionary<string,int>();
@@ -251,7 +251,7 @@ public sealed class QuietHome : NUIApplication
   base.OnAppControlReceived(e);
   string requested="";
   e.ReceivedAppControl.ExtraData.TryGet("quiet_page",out requested);
-  if(requested!=null&&requested.StartsWith("show:")){lastInput=DateTime.Now;CloseAmbient();CloseOverlays();}
+  if(requested!=null&&requested.StartsWith("show:")&&requested!="show:ambient-next"&&requested!="show:photos"){lastInput=DateTime.Now;CloseAmbient();CloseOverlays();}
   if(requested=="settings")OpenSettings("settings_request");
   else if(requested=="apps"){page=1;area=1;selected=0;BuildPage();}
   else if(requested!=null&&requested.StartsWith("show:news:")){ // test entry point: show:news:<section>[:<article>[:<page>]]
@@ -270,6 +270,9 @@ public sealed class QuietHome : NUIApplication
   else if(requested=="show:herodemo"){page=0;area=1;selected=0;CloseOverlays();heroDemo=true;if(plexItems.Count==0)RequestExtra(true,true,false);else ApplyHeroDemo();}
   else if(requested!=null&&requested.StartsWith("show:pref:")){var pp=requested.Substring(10).Split(':');int pv;if(pp.Length==2&&int.TryParse(pp[1],out pv)){if(pp[0]=="wall")SetWall(Math.Min(rotateIndex,pv));else if(pp[0]=="accent")prefAccent=Math.Max(0,Math.Min(accentNames.Length-1,pv));SavePrefs();ApplyTheme();BuildPage();}}
   else if(requested=="show:appearance"){page=2;area=1;CloseOverlays();appearOpen=true;appearRow=1;appearCol=prefWall;BuildPage();}
+  else if(requested=="show:ambient"){CloseOverlays();OpenAmbient();}
+  else if(requested=="show:ambient-next"){AdvanceAmbient();}
+  else if(requested=="show:photos"){lastPhotosRequest=DateTime.Now;SendDataRequest(false,false,false,false,photos:true);}
   else if(requested=="show:close"){CloseBrief(false);pictureOpen=false;cleanOpen=false;BuildPage();}
   else if(requested=="show:picture"){page=2;area=1;selected=3;BuildPage();OpenPicture();}
   else if(requested=="show:clean"){page=9;area=1;selected=0;cleanOpen=true;cleanRow=0;cleanCol=0;BuildPage();}
@@ -738,7 +741,7 @@ public sealed class QuietHome : NUIApplication
   var dord=new List<int>();for(int i=0;i<dk.Length;i++)dord.Add(i);dord.Sort((x,y)=>{int ux=Use(UsageKey(dk[x][1])),uy=Use(UsageKey(dk[y][1]));return ux!=uy?uy-ux:x-y;});
   if(homeShelf==0)for(int i=0;i<dord.Count;i++)Dock(dk[dord[i]][0],dk[dord[i]][1],dk[dord[i]][2],i,dk.Length);
   }
-  if(!((page==5||page==0)&&lightOpen)&&!(page==5&&coverPopupOpen)&&!(page==2&&appearOpen)){Toolbar("Applis","page:1","apps",0);Toolbar("Accueil","page:0","hdmi",1);Toolbar("Réglages","page:2","settings",2);}
+  if(!((page==5||page==0)&&lightOpen)&&!(page==5&&coverPopupOpen)&&!(page==2&&appearOpen)){Toolbar("Écran de veille","ambient","moon",0);Toolbar("Applis","page:1","apps",1);Toolbar("Accueil","page:0","hdmi",2);Toolbar("Réglages","page:2","settings",3);}
   if(page==0){NewsDropdownButton();WorldClock();if(lightOpen){BuildLightPopup();if(catalogOpen)BuildSceneCatalog();}}
   toolbarHint=Text("",1530,170,310,45,24,ink);toolbarHint.HorizontalAlignment=HorizontalAlignment.End;
   detail=Text("",80,1030,1320,35,20,muted);
@@ -2022,9 +2025,9 @@ public sealed class QuietHome : NUIApplication
  }
  void Toolbar(string label,string action,string icon,int n)
  {
-  int x=1652+n*64,y=46,sz=60;
+  int x=1588+n*64,y=46,sz=60;
   var card=Panel(x+sz/2,y+sz/2,sz,sz,GlassFill(),sz/2);card.PivotPoint=new Position(.5f,.5f,.5f);card.PositionUsesPivotPoint=true;LiquidGlass(card);
-  if(icon=="hdmi")card.Add(new ImageView{ResourceUrl=IconFile("tv",HexOf(ink)),Position2D=new Position2D(14,14),Size2D=new Size2D(32,32)});
+  if(icon=="hdmi"||icon=="moon")card.Add(new ImageView{ResourceUrl=IconFile(icon=="hdmi"?"tv":"moon",HexOf(ink)),Position2D=new Position2D(14,14),Size2D=new Size2D(32,32)});
   else card.Add(new ImageView{ResourceUrl=Root+"symbol-"+icon+".png",Color=ink,Position2D=new Position2D(16,16),Size2D=new Size2D(28,28)});
   slots.Add(new Slot{Card=card,Name=label,Action=action,Description=label,Row=-1,X=x,Y=y,W=sz,H=sz});
  }
@@ -2456,7 +2459,9 @@ public sealed class QuietHome : NUIApplication
    return;
   }
   if(e.Key==null||e.Key.State!=Key.StateType.Down)return;string k=e.Key.KeyPressedName;
-  if((k=="Return"||k=="KP_Enter")&&(swallowReturn||pendingLamp!=null||pendingFind!=null))return; // OK still held after a long pressisPaused=false;lastInput=DateTime.Now;if(ambientRoot!=null){CloseAmbient();return;}
+  if((k=="Return"||k=="KP_Enter")&&(swallowReturn||pendingLamp!=null||pendingFind!=null))return; // OK still held after a long press
+  isPaused=false;lastInput=DateTime.Now;
+  if(ambientRoot!=null){if(k=="Left"||k=="Right")AdvanceAmbient(k=="Left"?-1:1);else CloseAmbient();return;}
   long now=Environment.TickCount64;if(k==lastKey&&now-lastKeyAt<180)return;lastKey=k;lastKeyAt=now;
   if(briefRoot!=null){CloseBrief(true);return;}
   if(MaybeBrief())return;
@@ -2557,7 +2562,7 @@ public sealed class QuietHome : NUIApplication
    else if(k=="Left"||k=="Right"){
     int d=k=="Left"?-1:1;
     if(area==4){var widgets=Row(-2);int n=widgets.IndexOf(selected)+d;if(n<0||n>=widgets.Count)return;selected=widgets[n];UpdateFocus();}
-    else if(area==0){int ti=Array.IndexOf(tabPage,page)+d;if(ti<0||ti>=tabPage.Length){area=3;selected=Row(-1)[ti<0?2:0];UpdateFocus();}else{page=tabPage[ti];selected=0;BuildPage();}}
+    else if(area==0){int ti=Array.IndexOf(tabPage,page)+d;if(ti<0||ti>=tabPage.Length){area=3;var tr=Row(-1);selected=tr[ti<0?tr.Count-1:0];UpdateFocus();}else{page=tabPage[ti];selected=0;BuildPage();}}
     else if(area==3){var r=Row(-1);int n=r.IndexOf(selected)+d;if(n<0||n>=r.Count){area=0;page=n<0?2:0;selected=0;BuildPage();}else{selected=r[n];UpdateFocus();}}
     else{var r=Row(area-1);int n=r.IndexOf(selected);selected=r[(n+d+r.Count)%r.Count];UpdateFocus();}
    }
@@ -2617,6 +2622,7 @@ public sealed class QuietHome : NUIApplication
   if(a.StartsWith("line:")){lineDetailKey=a.Substring(5);lineDetailOpen=true;BuildPage();return;}
   if(a.StartsWith("weather_day:")){WriteState("weather_day:"+a.Substring(12));return;}
   if(a.StartsWith("hdmi:")){SelectSource(int.Parse(a.Substring(5)));return;}
+  if(a=="ambient"){ambientLaunch?.Stop();ambientLaunch=new Tizen.NUI.Timer(400);ambientLaunch.Tick+=(o,e)=>{ambientLaunch=null;if(!isPaused){lastInput=DateTime.Now;OpenAmbient();}return false;};ambientLaunch.Start();return;}
   if(a.StartsWith("page:")){page=int.Parse(a.Substring(5));selected=page==0?SourceIndex():0;area=1;BuildPage();return;}
   if(a.StartsWith("app:")){BumpUsage(a.Substring(4));Launch(a.Substring(4));return;}
   if(a.StartsWith("channel:")){StartChannel(a.Substring(8));return;}
@@ -2786,6 +2792,7 @@ public sealed class QuietHome : NUIApplication
   bool mob=(page==0||page==10)&&now-lastMobilityRequest>=TimeSpan.FromSeconds(page==10?60:150);
   bool fi=page==11&&findUnlocked&&now-lastFindRequest>=TimeSpan.FromSeconds(60);
   if(np||hubs||fx||mob||fi)RequestExtra(np||hubs,hubs,fx,false,mob,fi);
+  if(home&&now-lastPhotosRequest>=TimeSpan.FromHours(6)){lastPhotosRequest=now;SendDataRequest(false,false,false,false,photos:true);}
   if(!(w||m||t||n||k))return;
   if(w)lastWeatherRequest=now;if(m)lastMetroRequest=now;if(t){lastTrafficRequest=now;lastLinesRequest=now;}if(n)lastNewsRequest=now;if(k)lastMarketsRequest=now;
   SendDataRequest(w,m,t,n,t,k);
@@ -3114,40 +3121,144 @@ public sealed class QuietHome : NUIApplication
   string linky="--";foreach(var kv in haSensor)if(kv.Key.StartsWith("sensor.linky_")&&kv.Key.EndsWith("_dernier_releve"))linky=SensorNum(kv.Key,"0.0");
   homeSensorValue[2].Text=linky+" kWh";
  }
- // ---- ambient mode: dim drifting clock after 5 minutes without input (protects the OLED panel) ----
+ // ---- ambient mode: photo screensaver after 5 minutes without input; a new picture every 30 s, the info drifts a little (OLED) ----
  int AmbientDelay(){try{int n;if(File.Exists("/tmp/quiet-ambient")&&int.TryParse(File.ReadAllText("/tmp/quiet-ambient").Trim(),out n)&&n>=10)return n;}catch{}return 300;}
  string ShortNext(string direction){var d=NextMetro(direction);return d==null?"—":d.AtStop?"à quai":d.Minutes==0?"<1 min":d.Minutes+" min";}
+ const string photoIndex="/opt/usr/home/owner/apps_rw/com.samsung.tv.quicklaunch/shared/trusted/photos/index.json";
+ const int ambX=104,ambY=650;
+ class AmbientSlide{public string File="",Caption="",Place="",Credit="";}
+ List<AmbientSlide> ambientSlides=new List<AmbientSlide>();int ambientSlide=-1,ambientFront=-1,ambientPending=-1,ambientWeatherCode=-2;
+ ImageView[] ambientLayers;Animation[] ambientZoom=new Animation[2];View ambientDim,ambientCap,ambientWeatherIcon;TextLabel ambientCaption,ambientPlace,ambientCredit;
+ DateTime lastPhotosRequest=DateTime.MinValue;Tizen.NUI.Timer ambientLaunch;DateTime ambientShownAt=DateTime.Now;
+ string IllustrationFile(int w){int pw=prefWall;bool pd=dark;try{prefWall=w;dark=true;return ArtWallFile();}catch{return "";}finally{prefWall=pw;dark=pd;}}
+ List<AmbientSlide> LoadAmbientSlides()
+ {
+  var rnd=new Random();var photos=new List<AmbientSlide>();
+  try{if(File.Exists(photoIndex))using(var doc=JsonDocument.Parse(File.ReadAllText(photoIndex)))foreach(var p in doc.RootElement.EnumerateArray()){
+   string S(string k)=>p.TryGetProperty(k,out var v)&&v.ValueKind==JsonValueKind.String?v.GetString()??"":"";
+   string f=S("File");if(f!=""&&File.Exists(f))photos.Add(new AmbientSlide{File=f,Caption=S("Caption"),Place=S("Place"),Credit=S("Credit")});}}catch{}
+  photos=photos.OrderBy(x=>rnd.Next()).ToList();
+  var art=new List<AmbientSlide>();
+  foreach(int w in new[]{3,4,5,6,7,8}.OrderBy(x=>rnd.Next())){string f=IllustrationFile(w);if(f!="")art.Add(new AmbientSlide{File=f,Caption=wallNames[w],Place="Illustration BelAir OS"});}
+  if(photos.Count==0)return art;
+  var list=new List<AmbientSlide>();int ai=0;
+  for(int i=0;i<photos.Count;i++){list.Add(photos[i]);if(i%3==2&&art.Count>0)list.Add(art[ai++%art.Count]);}
+  return list;
+ }
+ string AmbientScrimFile()
+ {
+  try{
+   string file=System.IO.Path.Combine(Current.DirectoryInfo.Data,"ambient-scrim2.svg");
+   if(!File.Exists(file))File.WriteAllText(file,"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1920\" height=\"1080\" viewBox=\"0 0 1920 1080\"><defs>"
+    +"<linearGradient id=\"b\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\".38\" stop-color=\"#000\" stop-opacity=\"0\"/><stop offset=\".64\" stop-color=\"#000\" stop-opacity=\".46\"/><stop offset=\"1\" stop-color=\"#000\" stop-opacity=\".86\"/></linearGradient>"
+    +"<radialGradient id=\"c\" cx=\".2\" cy=\"1\" r=\".7\"><stop offset=\"0\" stop-color=\"#000\" stop-opacity=\".45\"/><stop offset=\"1\" stop-color=\"#000\" stop-opacity=\"0\"/></radialGradient></defs>"
+    +"<rect width=\"1920\" height=\"1080\" fill=\"url(#b)\"/><rect width=\"1920\" height=\"1080\" fill=\"url(#c)\"/></svg>");
+   return file;
+  }catch{return "";}
+ }
+ float AmbientDimLevel(){int h=DateTime.Now.Hour;return h>=23||h<7?.42f:.04f;}
  void OpenAmbient()
  {
   if(ambientRoot!=null)return;
   ambientRoot=new View{Size2D=new Size2D(1920,1080),BackgroundColor=new Color(0,0,0,1)};
-  ambientBlock=new View{Position2D=new Position2D(140,300),Size2D=new Size2D(1000,490)};ambientRoot.Add(ambientBlock);
-  var soft=new Color(.80f,.83f,.90f,1);var dim=new Color(.50f,.54f,.62f,1);
-  ambientClock=Label("",0,0,1000,250,200,soft,"Display");ambientBlock.Add(ambientClock);
-  ambientDate=Label("",8,262,1000,48,34,dim,"Medium");ambientBlock.Add(ambientDate);
-  ambientInfo=Label("",8,324,1000,44,30,soft,"Medium");ambientBlock.Add(ambientInfo);
-  ambientIndoor=Label("",8,376,1000,44,30,soft,"Medium");ambientBlock.Add(ambientIndoor);
-  ambientMetro=Label("",8,432,1000,40,26,dim,"Medium");ambientBlock.Add(ambientMetro);
-  Window.Default.Add(ambientRoot);ambientRoot.RaiseToTop();ambientStep=0;UpdateAmbient();
-  ambientTimer=new Tizen.NUI.Timer(20000);ambientTimer.Tick+=(o,a)=>{if(ambientRoot==null)return false;ambientStep++;UpdateAmbient();return true;};ambientTimer.Start();
+  ambientLayers=new ImageView[2];
+  for(int i=0;i<2;i++){
+   var l=new ImageView{Size2D=new Size2D(1920,1080),FittingMode=FittingModeType.ScaleToFill,DesiredWidth=1920,DesiredHeight=1080,Opacity=0,PivotPoint=PivotPoint.Center,PositionUsesPivotPoint=false};
+   int li=i;l.ResourceReady+=(s,e)=>AmbientLayerReady(li);ambientLayers[i]=l;ambientRoot.Add(l);
+  }
+  ambientDim=new View{Size2D=new Size2D(1920,1080),BackgroundColor=new Color(0,0,0,AmbientDimLevel())};ambientRoot.Add(ambientDim);
+  string scrim=AmbientScrimFile();if(scrim!="")ambientRoot.Add(new ImageView{ResourceUrl=scrim,Size2D=new Size2D(1920,1080)});
+  var white=new Color(1,1,1,1);var soft=new Color(1,1,1,.88f);var faint=new Color(1,1,1,.62f);
+  ambientBlock=new View{Position2D=new Position2D(ambX,ambY),Size2D=new Size2D(1000,360)};ambientRoot.Add(ambientBlock);
+  ambientClock=Label("",-8,0,800,190,180,white,"Display");ambientBlock.Add(ambientClock);
+  ambientDate=Label("",0,188,900,52,38,white,"Medium");ambientBlock.Add(ambientDate);
+  ambientInfo=Label("",66,246,900,52,32,soft,"Medium");ambientBlock.Add(ambientInfo);
+  ambientIndoor=Label("",0,304,1000,44,28,faint,"Medium");ambientBlock.Add(ambientIndoor);
+  ambientWeatherIcon=null;ambientWeatherCode=-2;
+  ambientCap=new View{Position2D=new Position2D(1920-ambX-760,ambY+214),Size2D=new Size2D(760,136),Opacity=0};ambientRoot.Add(ambientCap);
+  ambientCaption=Label("",0,0,760,48,32,white,"Medium");ambientCaption.HorizontalAlignment=HorizontalAlignment.End;ambientCaption.Ellipsis=true;ambientCap.Add(ambientCaption);
+  ambientPlace=Label("",0,52,760,38,24,soft,"Medium");ambientPlace.HorizontalAlignment=HorizontalAlignment.End;ambientPlace.Ellipsis=true;ambientCap.Add(ambientPlace);
+  ambientCredit=Label("",0,94,760,40,18,faint,"Medium");ambientCredit.HorizontalAlignment=HorizontalAlignment.End;ambientCredit.Ellipsis=true;ambientCap.Add(ambientCredit);
+  Window.Default.Add(ambientRoot);ambientRoot.RaiseToTop();ambientStep=0;
+  ambientSlides=LoadAmbientSlides();ambientSlide=-1;ambientFront=-1;ambientPending=-1;
+  UpdateAmbient();AdvanceAmbient();
+  ambientTimer=new Tizen.NUI.Timer(5000);ambientTimer.Tick+=(o,a)=>{if(ambientRoot==null)return false;ambientStep++;UpdateAmbient();if((DateTime.Now-ambientShownAt).TotalSeconds>=28)AdvanceAmbient();return true;};ambientTimer.Start();
   RequestDue();WriteState("ambient_opened");
+ }
+ void AdvanceAmbient(int dir=1)
+ {
+  if(ambientRoot==null||ambientSlides.Count==0||ambientPending>=0)return;
+  if(ambientFront>=0&&ambientSlides.Count<2)return;
+  ambientShownAt=DateTime.Now;
+  if(dir<0){ambientSlide=ambientSlide<=0?ambientSlides.Count-2:ambientSlide-2;if(ambientSlide<-1)ambientSlide=-1;}
+  ambientSlide++;
+  if(ambientSlide>=ambientSlides.Count){string last=ambientSlides[ambientSlides.Count-1].File;var next=LoadAmbientSlides();if(next.Count>0)ambientSlides=next;if(ambientSlides.Count>1&&ambientSlides[0].File==last)ambientSlides.Add(ambientSlides[0]);ambientSlide=ambientSlides.Count>1&&ambientSlides[0].File==last?1:0;}
+  int back=ambientFront<0?0:1-ambientFront;ambientPending=back;
+  string file=ambientSlides[ambientSlide].File;
+  if(ambientLayers[back].ResourceUrl==file)AmbientLayerReady(back);else ambientLayers[back].ResourceUrl=file;
+ }
+ void AmbientLayerReady(int li)
+ {
+  if(ambientRoot==null||li!=ambientPending)return;
+  ambientPending=-1;
+  var inL=ambientLayers[li];
+  if(ambientZoom[li]!=null){ambientZoom[li].Stop();ambientZoom[li].Dispose();ambientZoom[li]=null;}
+  inL.Scale=new Vector3(1,1,1);inL.Opacity=0;
+  if(ambientFront>=0)inL.RaiseAbove(ambientLayers[ambientFront]);
+  var zoom=new Animation(34000);zoom.AnimateTo(inL,"Scale",new Vector3(1.07f,1.07f,1));zoom.Play();ambientZoom[li]=zoom;
+  var fade=new Animation(1800);fade.AnimateTo(inL,"Opacity",1f);
+  if(ambientFront>=0)fade.AnimateTo(ambientLayers[ambientFront],"Opacity",0f,new AlphaFunction(AlphaFunction.BuiltinFunctions.EaseIn));
+  fade.Play();
+  var hide=new Animation(400);hide.AnimateTo(ambientCap,"Opacity",0f);hide.Play();ambientFront=li;
+  var s=ambientSlides[Math.Max(0,Math.Min(ambientSlide,ambientSlides.Count-1))];
+  var reveal=new Tizen.NUI.Timer(700);reveal.Tick+=(o,a)=>{
+   if(ambientRoot!=null){
+    ambientCaption.Text=s.Caption;ambientPlace.Text=s.Place;string cr=s.Credit.TrimStart('©',' ');ambientCredit.Text=cr==""?"":"© "+cr;
+    var show=new Animation(900);show.AnimateTo(ambientCap,"Opacity",1f);show.Play();
+   }
+   reveal.Stop();return false;};
+  reveal.Start();WriteState("ambient_slide:"+ambientSlide+"/"+ambientSlides.Count+":"+s.Caption);
  }
  void UpdateAmbient()
  {
   if(ambientRoot==null)return;var now=DateTime.Now;
   ambientClock.Text=now.ToString("HH:mm");
-  ambientDate.Text=frDays[(int)now.DayOfWeek]+" "+now.Day+" "+frMonths[now.Month-1];
-  ambientInfo.Text=forecast.Count>0?"Paris 12e    "+weatherTemperatureText+"    "+weatherConditionText:"";
-  string ts=SensorNum("sensor.salon_sensor_temperature","0.0"),tc=SensorNum("sensor.chambre_temperature_temperature","0.0");
-  ambientIndoor.Text=ts=="--"&&tc=="--"?"":"Salon "+ts+"°    Chambre "+tc+"°";
-  ambientMetro.Text=metroAvailable?"Métro 6    Nation "+ShortNext("Nation")+"    ·    Étoile "+ShortNext("Etoile"):"";
-  if(ambientStep>0&&ambientStep%3==0){var rnd=new Random();var move=new Animation(6000);move.AnimateTo(ambientBlock,"Position",new Position(80+rnd.Next(0,680),80+rnd.Next(0,350),0));move.Play();}
+  string day=frDays[(int)now.DayOfWeek];
+  ambientDate.Text=char.ToUpper(day[0])+day.Substring(1)+" "+now.Day+" "+frMonths[now.Month-1];
+  bool hasWeather=forecast.Count>0;
+  if(hasWeather&&weatherCode!=ambientWeatherCode){
+   if(ambientWeatherIcon!=null){ambientWeatherIcon.Unparent();ambientWeatherIcon.Dispose();}
+   ambientWeatherIcon=AddWeatherIcon(ambientBlock,-8,244,weatherCode);ambientWeatherIcon.PivotPoint=PivotPoint.TopLeft;ambientWeatherIcon.Scale=new Vector3(.7f,.7f,1);ambientWeatherCode=weatherCode;
+  }
+  ambientInfo.Position2D=new Position2D(hasWeather?66:0,246);
+  ambientInfo.Text=hasWeather?weatherTemperatureText+"   "+weatherConditionText+"   ·   Paris 12e":"";
+  var rooms=new List<string>();
+  foreach(var r in new[]{("Salon","sensor.salon_sensor_temperature"),("Chambre","sensor.chambre_temperature_temperature"),("Salle de bain","sensor.presence_salle_de_bain_temperature")}){string v=SensorNum(r.Item2,"0.0");if(v!="--")rooms.Add(r.Item1+" "+v+"°");}
+  var parts=new List<string>();
+  if(rooms.Count>0)parts.Add(string.Join("  ·  ",rooms));
+  if(metroAvailable)parts.Add("Métro 6  ·  Nation "+ShortNext("Nation")+"  ·  Étoile "+ShortNext("Etoile"));
+  if(ambientStep%2==0||ambientIndoor.Text==""){
+   string next=parts.Count==0?"":parts[(ambientStep/2)%parts.Count];
+   if(next!=ambientIndoor.Text){
+    if(ambientIndoor.Text==""||parts.Count<2)ambientIndoor.Text=next;
+    else{var o=new Animation(450);o.AnimateTo(ambientIndoor,"Opacity",0f);o.Finished+=(a,b)=>{if(ambientRoot==null)return;ambientIndoor.Text=next;var i=new Animation(600);i.AnimateTo(ambientIndoor,"Opacity",1f);i.Play();};o.Play();}
+   }
+  }
+  ambientDim.BackgroundColor=new Color(0,0,0,AmbientDimLevel());
+  if(ambientStep>0&&ambientStep%60==0){
+   var rnd=new Random();int dx=rnd.Next(-36,37),dy=rnd.Next(-40,9);
+   var move=new Animation(5000);
+   move.AnimateTo(ambientBlock,"Position",new Position(ambX+dx,ambY+dy,0));
+   move.AnimateTo(ambientCap,"Position",new Position(1920-ambX-760+dx,ambY+214+dy,0));
+   move.Play();
+  }
  }
  void CloseAmbient()
  {
   if(ambientRoot==null)return;
   if(ambientTimer!=null){ambientTimer.Stop();ambientTimer.Dispose();ambientTimer=null;}
-  Window.Default.Remove(ambientRoot);ambientRoot.Dispose();ambientRoot=null;lastInput=DateTime.Now;WriteState("ambient_closed");
+  for(int i=0;i<2;i++)if(ambientZoom[i]!=null){ambientZoom[i].Stop();ambientZoom[i].Dispose();ambientZoom[i]=null;}
+  Window.Default.Remove(ambientRoot);ambientRoot.Dispose();ambientRoot=null;ambientLayers=null;ambientWeatherIcon=null;ambientPending=-1;lastInput=DateTime.Now;WriteState("ambient_closed");
  }
  // ---- Maison page: automatic cinema mode switch and Félix the robot vacuum ----
  string SensorState(string id){return haSensor.TryGetValue(id,out var v)?v:"";}
@@ -4025,7 +4136,7 @@ public sealed class QuietHome : NUIApplication
  {
   lastWeatherRequest=DateTime.Now;lastMetroRequest=DateTime.Now;lastTrafficRequest=DateTime.Now;lastNewsRequest=DateTime.Now;lastLinesRequest=DateTime.Now;lastMarketsRequest=DateTime.Now;SendDataRequest(true,true,true,true,true,true);
  }
- void SendDataRequest(bool weather,bool metro,bool traffic,bool news,bool lines=false,bool markets=false,bool energy=false)
+ void SendDataRequest(bool weather,bool metro,bool traffic,bool news,bool lines=false,bool markets=false,bool energy=false,bool photos=false)
  {
   if(isPaused)return;
   IntPtr c;int r=app_control_create(out c);
@@ -4039,6 +4150,7 @@ public sealed class QuietHome : NUIApplication
    if(r==0&&lines)r=app_control_add_extra_data(c,"quiet_lines_request","1");
    if(r==0&&markets)r=app_control_add_extra_data(c,"quiet_markets_request","1");
    if(r==0&&energy)r=app_control_add_extra_data(c,"quiet_energy_request","1");
+   if(r==0&&photos)r=app_control_add_extra_data(c,"quiet_photos_request","1");
    if(r==0)r=app_control_send_launch_request(c,IntPtr.Zero,IntPtr.Zero);
   }finally{app_control_destroy(c);}}
   if(r!=0){

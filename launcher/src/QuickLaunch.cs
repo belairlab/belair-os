@@ -473,6 +473,12 @@ public sealed class QuickLaunch : NUIApplication {
   string linesRequest;bool fetchLines=e.ReceivedAppControl.ExtraData.TryGet("quiet_lines_request",out linesRequest)&&linesRequest=="1";
   string marketsRequest;bool fetchMarkets=e.ReceivedAppControl.ExtraData.TryGet("quiet_markets_request",out marketsRequest)&&marketsRequest=="1";
   string energyRequest;bool fetchEnergy=e.ReceivedAppControl.ExtraData.TryGet("quiet_energy_request",out energyRequest)&&energyRequest=="1";
+  string photosRequest;
+  if(e.ReceivedAppControl.ExtraData.TryGet("quiet_photos_request",out photosRequest)&&photosRequest=="1"){
+   haLast=DateTime.UtcNow;System.Threading.Interlocked.Increment(ref haBusy);
+   Task.Run(()=>{try{FetchPhotos();}catch{}finally{haLast=DateTime.UtcNow;System.Threading.Interlocked.Decrement(ref haBusy);}});
+   if(!(fetchWeather||fetchMetro||fetchTraffic||fetchNews||fetchLines||fetchMarkets||fetchEnergy)){KeepWarm();return;}
+  }
   if(fetchWeather||fetchMetro||fetchTraffic||fetchNews||fetchLines||fetchMarkets||fetchEnergy){
    // Same warm, off-main-thread path as Home Assistant: one request never blocks or kills another.
    haLast=DateTime.UtcNow;System.Threading.Interlocked.Increment(ref haBusy);
@@ -1059,6 +1065,61 @@ public sealed class QuickLaunch : NUIApplication {
  static void PruneDir(string dir,HashSet<string> keep,int keepNewest){
   try{var files=new System.IO.DirectoryInfo(dir).GetFiles().OrderByDescending(file=>file.LastWriteTimeUtc).ToList();
    for(int i=keepNewest;i<files.Count;i++)if(!keep.Contains(files[i].Name))files[i].Delete();}catch{}
+ }
+ // ---- screensaver photos: Bing's daily images (French captions) plus random picks from a public archive of past ones ----
+ class PhotoItem{public string Key="",File="",Caption="",Place="",Credit="",Added="";}
+ static readonly object photoLock=new object();
+ static void FetchPhotos(){
+  lock(photoLock){try{using(var client=WebClient(15)){
+   string dir=SharedDir("photos"),indexPath=System.IO.Path.Combine(dir,"index.json");
+   var lib=new List<PhotoItem>();
+   try{if(File.Exists(indexPath))lib=JsonSerializer.Deserialize<List<PhotoItem>>(File.ReadAllText(indexPath),new JsonSerializerOptions{IncludeFields=true})??new List<PhotoItem>();}catch{}
+   lib=lib.Where(p=>p.File!=""&&File.Exists(p.File)).ToList();
+   var have=new HashSet<string>(lib.Select(p=>p.Key));
+   var fresh=new List<(string url,PhotoItem item)>();
+   foreach(int idx in new[]{0,7}){
+    try{
+     using(var doc=JsonDocument.Parse(client.GetStringAsync("https://www.bing.com/HPImageArchive.aspx?format=js&idx="+idx+"&n=8&mkt=fr-FR").GetAwaiter().GetResult()))
+      foreach(var im in doc.RootElement.GetProperty("images").EnumerateArray()){
+       string ub=im.GetProperty("urlbase").GetString()??"",cr=im.GetProperty("copyright").GetString()??"";
+       var m=Regex.Match(ub,@"OHR\.([A-Za-z0-9]+)_");if(!m.Success)continue;
+       int cut=cr.LastIndexOf(" (©");
+       fresh.Add(("https://www.bing.com"+ub+"_1920x1080.jpg",new PhotoItem{Key=m.Groups[1].Value,Caption=im.GetProperty("title").GetString()??"",Place=cut>0?cr.Substring(0,cut):cr,Credit=cut>0?cr.Substring(cut+2).TrimEnd(')'):""}));
+      }
+    }catch{}
+   }
+   try{
+    using(var doc=JsonDocument.Parse(client.GetStringAsync("https://bing.npanuhin.me/FR/fr.json").GetAwaiter().GetResult())){
+     var all=doc.RootElement.EnumerateArray().ToList();var rnd=new Random();
+     for(int n=0;n<8&&all.Count>0;n++){
+      var e=all[rnd.Next(all.Count)];
+      string bu=e.TryGetProperty("bing_url",out var b)&&b.ValueKind==JsonValueKind.String?b.GetString():"";
+      var m=Regex.Match(bu??"",@"OHR\.([A-Za-z0-9]+)_[A-Za-z]{2}-[A-Za-z]{2}\d+_UHD\.jpg$");if(!m.Success)continue;
+      string S(string k)=>e.TryGetProperty(k,out var v)&&v.ValueKind==JsonValueKind.String?v.GetString():"";
+      fresh.Add((bu.Replace("_UHD.jpg","_1920x1080.jpg"),new PhotoItem{Key=m.Groups[1].Value,Caption=S("caption"),Place=S("title"),Credit=S("copyright").TrimStart('©',' ')}));
+     }
+    }
+   }catch{}
+   int downloads=0;
+   foreach(var f in fresh){
+    if(downloads>=14||have.Contains(f.item.Key))continue;
+    try{
+     using(var response=client.GetAsync(f.url).GetAwaiter().GetResult()){
+      if(!response.IsSuccessStatusCode||(response.Content.Headers.ContentType?.MediaType??"")!="image/jpeg")continue;
+      var bytes=response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+      if(bytes.Length<20000||bytes.Length>4000000)continue;
+      string path=System.IO.Path.Combine(dir,Hash(f.item.Key)+".jpg");
+      File.WriteAllBytes(path+".part",bytes);File.Move(path+".part",path,true);
+      f.item.File=path;f.item.Added=DateTime.UtcNow.ToString("o",CultureInfo.InvariantCulture);lib.Add(f.item);have.Add(f.item.Key);downloads++;
+     }
+    }catch{}
+   }
+   lib=lib.OrderByDescending(p=>p.Added,StringComparer.Ordinal).Take(80).ToList();
+   File.WriteAllText(indexPath+".part",JsonSerializer.Serialize(lib,new JsonSerializerOptions{IncludeFields=true}));File.Move(indexPath+".part",indexPath,true);
+   var keep=new HashSet<string>(lib.Select(p=>System.IO.Path.GetFileName(p.File)));keep.Add("index.json");
+   foreach(var file in new System.IO.DirectoryInfo(dir).GetFiles())if(!keep.Contains(file.Name))try{file.Delete();}catch{}
+   try{File.WriteAllText("/tmp/quiet-photos.txt",DateTime.UtcNow.ToString("o")+"\nlibrary="+lib.Count+"\nnew="+downloads+"\ncandidates="+fresh.Count+"\n");}catch{}
+  }}catch{}}
  }
  // ---- full article on demand: body paragraphs and subheadings, plus the large photo ----
  static string FetchArticleJson(string url){
