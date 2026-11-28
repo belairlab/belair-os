@@ -2403,7 +2403,7 @@ public sealed class QuietHome : NUIApplication
    dayCards[i].BorderlineWidth=focused?4:0;dayCards[i].BorderlineColor=accent;
   }
   if(focusAnimation!=null)focusAnimation.Play();
-  bool onToolbar=area==3&&selected>=0&&selected<slots.Count&&slots[selected].Row==-1;if(clock!=null)clock.Opacity=page==3||page==4||page!=0&&onToolbar?0:1;toolbarHint.Text=onToolbar&&!lightOpen?slots[selected].Name:"";
+  bool onToolbar=area==3&&selected>=0&&selected<slots.Count&&slots[selected].Row==-1;if(clock!=null)clock.Opacity=page==3||page==4||page!=0&&onToolbar?0:1;toolbarHint.Text=onToolbar&&!lightOpen&&page!=0?slots[selected].Name:"";
   detail.Text=quoteDetailOpen?"←/→ échelle · ↑/↓ action précédente ou suivante · Retour pour fermer":area==11?"←/→ choisir · OK graphique du jour · ↑ rubriques · ↓ articles":page==3&&area==5?"←/→ heures · ↓ jours · OK détail · ↑ menu":page==3&&area==6?"←/→ jours · ↑ heures · OK détail":area==7?"←/→ rubrique · ↓ titres · OK pour afficher":area==8?"↑ rubriques · ←/→ changer · OK pour le détail":page==0&&area==4&&selected==metroSlotIndex?"OK pour voir les 2 prochains métros par direction":page==0&&area==4&&selected==weatherSlotIndex?"OK pour les prévisions du jour et sur 7 jours":(page==1||page==8||page==9||page==10||page==11)&&area==1&&slots[selected].Row>=0?(slots[selected].Name!=""?slots[selected].Name+" · ":"")+slots[selected].Description:area==0&&page==0?"↑ Actualités · gauche/droite pour changer d’écran":area==0?"":area==2?slots[selected].Name:"";
   if(page==2){
    slots[0].Label.Text=currentVolume<0?"Indisponible":currentVolume.ToString();
@@ -2517,8 +2517,10 @@ public sealed class QuietHome : NUIApplication
     if(k=="Up"||k=="Down")return;
    }
    if(page==1&&HandleLibraryKey(k))return;
-   if(page==0&&area==0&&k=="Up"&&newsButtonSlotIndex>=0){area=3;selected=newsButtonSlotIndex;UpdateFocus();return;}
-   if(page==0&&area==3&&selected==newsButtonSlotIndex&&k=="Down"){area=0;selected=page;UpdateFocus();return;}
+   // Accueil, top to bottom: tab bar, Actualités, then the hero (or the Infos shelf)
+   if(page==0&&area==0&&k=="Down"&&newsButtonSlotIndex>=0){area=3;selected=newsButtonSlotIndex;UpdateFocus();return;}
+   if(page==0&&area==3&&selected==newsButtonSlotIndex&&k=="Up"){area=0;selected=page;UpdateFocus();return;}
+   if(page==0&&area==3&&selected==newsButtonSlotIndex&&k=="Down"){if(homeShelf==1&&Row(-2).Count>0){area=4;selected=Row(-2)[0];}else{area=1;selected=Row(0)[0];}UpdateFocus();return;}
    if(editing!=""){if(k=="Left"||k=="Right"){int d=k=="Left"?-1:1;if(editing=="volume")ChangeVolume(d);else if(editing=="brightness"||editing=="contrast")ChangeLevel(editing,d);else if(editing.StartsWith("covpos:"))ChangeCover(editing.Substring(7),d);}else if(k=="Return"||k=="KP_Enter"||k=="XF86Back"||k=="Back"||k=="Escape"){editing="";notice.Text="";UpdateFocus();}return;}
    if(page==5){
     if(k=="Return"||k=="KP_Enter"){if(area==0){area=1;selected=Row(0).Count>0?Row(0)[0]:0;UpdateFocus();}else Activate();return;}
@@ -2545,6 +2547,7 @@ public sealed class QuietHome : NUIApplication
  bool HandleHomeNavigation(string key)
  {
   if(page!=0||key!="Up"&&key!="Down"&&key!="Left"&&key!="Right")return false;
+  if(area==1&&key=="Up"&&newsButtonSlotIndex>=0){area=3;selected=newsButtonSlotIndex;UpdateFocus();return true;}
   if(area==1&&(key=="Left"||key=="Right")){var r=Row(0);int n=r.IndexOf(selected)+(key=="Left"?-1:1);if(n>=0&&n<r.Count){selected=r[n];UpdateFocus();}return true;}
   if(area==2&&key=="Down"){int x=slots[selected].X;homeShelf=1;selected=0;area=4;BuildPage();selected=NearestInRow(-2,x);UpdateFocus(false);return true;}
   if(area==4&&key=="Up"){int x=slots[selected].X;homeShelf=0;selected=0;area=2;BuildPage();selected=NearestInRow(1,x);UpdateFocus(false);return true;}
@@ -2935,15 +2938,15 @@ public sealed class QuietHome : NUIApplication
   string bg=SeventiesBg();string op=dark?".62":"1";
   string[] col={"#7A3E1D","#C4512A","#E8792C","#F2A93B","#F6CF6B"};int[] rad={496,416,336,256,176};
   var sb=new System.Text.StringBuilder();
-  sb.Append("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1920\" height=\"1080\" viewBox=\"0 0 1920 1080\"><defs><clipPath id=\"h\"><rect width=\"1920\" height=\"612\"/></clipPath></defs>");
+  sb.Append("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1920\" height=\"1080\" viewBox=\"0 0 1920 1080\"><defs><clipPath id=\"h\"><rect width=\"1920\" height=\"656\"/></clipPath></defs>");
   sb.Append("<rect width=\"1920\" height=\"1080\" fill=\""+bg+"\"/>");
   sb.Append("<g clip-path=\"url(#h)\" opacity=\""+op+"\">");
-  for(int i=0;i<col.Length;i++)sb.Append("<circle cx=\"1540\" cy=\"612\" r=\""+rad[i]+"\" fill=\""+col[i]+"\"/>");
-  int[] sy={566,532,500,470,442,416},sh={14,12,10,8,6,4};
-  for(int i=0;i<sy.Length;i++)sb.Append("<rect x=\"900\" y=\""+sy[i]+"\" width=\"1020\" height=\""+sh[i]+"\" fill=\""+bg+"\"/>");
+  for(int i=0;i<col.Length;i++)sb.Append("<circle cx=\"1490\" cy=\"656\" r=\""+rad[i]+"\" fill=\""+col[i]+"\"/>");
+  int[] sy={610,576,544,514,486,460},sh={14,12,10,8,6,4};
+  for(int i=0;i<sy.Length;i++)sb.Append("<rect x=\"850\" y=\""+sy[i]+"\" width=\"1070\" height=\""+sh[i]+"\" fill=\""+bg+"\"/>");
   sb.Append("</g>");
   sb.Append("</svg>");
-  return WallFile("seventies3"+(dark?"-d":"-l"),sb.ToString());
+  return WallFile("seventies5"+(dark?"-d":"-l"),sb.ToString());
  }
  string AuroraWallFile()
  {
