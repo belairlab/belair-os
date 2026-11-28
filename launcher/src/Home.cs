@@ -690,9 +690,14 @@ public sealed class QuietHome : NUIApplication
     hb.Add(new ImageView{ResourceUrl=IconFile("play","#0B0F19"),Position2D=new Position2D(40,25),Size2D=new Size2D(22,22)});
     heroButton=Label("Passer sur l’Apple TV",72,0,300,72,24,new Color(.04f,.06f,.10f,1),"Semibold");hb.Add(heroButton);
     slots.Add(new Slot{Card=hb,Name="Apple TV",Action="hdmi:13",Description="Entrée HDMI 1 · Apple TV",Row=0,X=96,Y=590,W=400,H=72});
-    var fb=Panel(520+150,590+36,300,72,dark?new Color(1,1,1,.16f):new Color(1,1,1,.50f),36);fb.PivotPoint=new Position(.5f,.5f,.5f);fb.PositionUsesPivotPoint=true;fb.BorderlineWidth=1.5f;fb.BorderlineColor=new Color(1,1,1,dark?.32f:.9f);LiquidGlass(fb,26f);
-    var fl=Label("Ambiance Film",0,0,300,72,24,ink,"Medium");fl.HorizontalAlignment=HorizontalAlignment.Center;fb.Add(fl);
-    slots.Add(new Slot{Card=fb,Name="Ambiance Film",Action="ha_scene:scene.film",Description="Néon 5 %, volet du salon · OK pour lancer la scène Film",Row=0,X=520,Y=590,W=300,H=72});
+    // TV backlight control: shows its state, OK opens its light sheet
+    int bw2=400;var fb=Panel(520+bw2/2,590+36,bw2,72,dark?new Color(1,1,1,.16f):new Color(1,1,1,.50f),36);fb.PivotPoint=new Position(.5f,.5f,.5f);fb.PositionUsesPivotPoint=true;fb.BorderlineWidth=1.5f;fb.BorderlineColor=new Color(1,1,1,dark?.32f:.9f);LiquidGlass(fb,26f);
+    bool blOn=IsLampOn(backlightId);
+    var bdot=new View{Position2D=new Position2D(18,14),Size2D=new Size2D(44,44),CornerRadius=new Vector4(22,22,22,22),BackgroundColor=blOn?HexColor(lightRgb.TryGetValue(backlightId,out var brh)&&brh!=""?brh:"#FFB547"):dark?new Color(1,1,1,.14f):new Color(0,0,0,.08f)};fb.Add(bdot);
+    bdot.Add(new ImageView{ResourceUrl=IconFile("tv",blOn?"#16130F":HexOf(muted)),Position2D=new Position2D(10,10),Size2D=new Size2D(24,24)});
+    fb.Add(Label("Rétroéclairage",76,8,bw2-96,32,23,ink,"Semibold"));
+    backlightHint=Label(LampStateText(backlightId),76,38,bw2-96,26,18,muted,"Medium");fb.Add(backlightHint);
+    slots.Add(new Slot{Card=fb,Name="Rétroéclairage TV",Action="light:"+backlightId,Description="OK pour la luminosité, les scènes et les options du rétroéclairage",Row=0,X=520,Y=590,W=bw2,H=72});
     UpdateHero();
     Text("Regarder",96,786,600,40,26,ink,"Semibold");
    }else{
@@ -732,10 +737,9 @@ public sealed class QuietHome : NUIApplication
   var dk=new[]{new[]{"Netflix","atv:org.tizen.netflix-app:Netflix","netflix"},new[]{"YouTube","atv:com.samsung.tv.cobalt-yt:YouTube","youtube"},new[]{"CANAL+","atv:QmpwflxWdt.CanalPlusLauncher:CANAL+","canal-plus"},new[]{"Plex","atv:kIciSQlYEM.plex:Plex","plex"},new[]{"Prime Video","atv:org.tizen.primevideo:Prime Video","prime"},new[]{"Apple TV","atv:com.samsung.tv.aria-video:TV","apple-tv"},new[]{"France 2 en direct","channel:france-2","france-2"}};
   var dord=new List<int>();for(int i=0;i<dk.Length;i++)dord.Add(i);dord.Sort((x,y)=>{int ux=Use(UsageKey(dk[x][1])),uy=Use(UsageKey(dk[y][1]));return ux!=uy?uy-ux:x-y;});
   if(homeShelf==0)for(int i=0;i<dord.Count;i++)Dock(dk[dord[i]][0],dk[dord[i]][1],dk[dord[i]][2],i,dk.Length);
-  if(lightOpen){BuildLightPopup();if(catalogOpen)BuildSceneCatalog();}
   }
   if(!((page==5||page==0)&&lightOpen)&&!(page==5&&coverPopupOpen)&&!(page==2&&appearOpen)){Toolbar("Applis","page:1","apps",0);Toolbar("Accueil","page:0","hdmi",1);Toolbar("Réglages","page:2","settings",2);}
-  if(page==0){NewsDropdownButton();WorldClock();}
+  if(page==0){NewsDropdownButton();WorldClock();if(lightOpen){BuildLightPopup();if(catalogOpen)BuildSceneCatalog();}}
   toolbarHint=Text("",1530,170,310,45,24,ink);toolbarHint.HorizontalAlignment=HorizontalAlignment.End;
   detail=Text("",80,1030,1320,35,20,muted);
   notice=Text("",80,1008,1760,34,22,accent);
@@ -1937,6 +1941,7 @@ public sealed class QuietHome : NUIApplication
    }
   }}catch{}
   if(lightOpen&&(page==5||page==0)&&!HaRecent(lightId,4))BuildPage();
+  if(backlightHint!=null)backlightHint.Text=LampStateText(backlightId);
   if(page==5&&!coverPopupOpen){foreach(var e in haCoverId)SetCoverVisual(e);foreach(var e in haLampId)SetLampVisual(e);}
   UpdateHomeSensors();UpdateDevices();
   WriteState("ha_data");
@@ -2398,7 +2403,7 @@ public sealed class QuietHome : NUIApplication
    dayCards[i].BorderlineWidth=focused?4:0;dayCards[i].BorderlineColor=accent;
   }
   if(focusAnimation!=null)focusAnimation.Play();
-  if(clock!=null)clock.Opacity=page==3||page==4||page!=0&&area==3?0:1;toolbarHint.Text=area==3?slots[selected].Name:"";
+  bool onToolbar=area==3&&selected>=0&&selected<slots.Count&&slots[selected].Row==-1;if(clock!=null)clock.Opacity=page==3||page==4||page!=0&&onToolbar?0:1;toolbarHint.Text=onToolbar&&!lightOpen?slots[selected].Name:"";
   detail.Text=quoteDetailOpen?"←/→ échelle · ↑/↓ action précédente ou suivante · Retour pour fermer":area==11?"←/→ choisir · OK graphique du jour · ↑ rubriques · ↓ articles":page==3&&area==5?"←/→ heures · ↓ jours · OK détail · ↑ menu":page==3&&area==6?"←/→ jours · ↑ heures · OK détail":area==7?"←/→ rubrique · ↓ titres · OK pour afficher":area==8?"↑ rubriques · ←/→ changer · OK pour le détail":page==0&&area==4&&selected==metroSlotIndex?"OK pour voir les 2 prochains métros par direction":page==0&&area==4&&selected==weatherSlotIndex?"OK pour les prévisions du jour et sur 7 jours":(page==1||page==8||page==9||page==10||page==11)&&area==1&&slots[selected].Row>=0?(slots[selected].Name!=""?slots[selected].Name+" · ":"")+slots[selected].Description:area==0&&page==0?"↑ Actualités · gauche/droite pour changer d’écran":area==0?"":area==2?slots[selected].Name:"";
   if(page==2){
    slots[0].Label.Text=currentVolume<0?"Indisponible":currentVolume.ToString();
