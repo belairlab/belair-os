@@ -554,7 +554,7 @@ public sealed class QuickLaunch : NUIApplication {
   if(body.TryGetProperty("entity_id",out var eids)&&eids.ValueKind==JsonValueKind.Array){if(eids.GetArrayLength()==0||eids.GetArrayLength()>12)return false;foreach(var x in eids.EnumerateArray()){if(x.ValueKind!=JsonValueKind.String||!HaEntityAllowed(path,x.GetString()??""))return false;}return true;}
   return HaEntityAllowed(path,Str(body,"entity_id"));
  }
- static readonly Regex musicSelect=new Regex(@"^select\.[a-z0-9_]+_music_mode(_\d+)?$"),govSwitch=new Regex(@"^switch\.[a-z0-9_]+_(music_mode|dreamview|bottom_light|side_light|ripple_light)(_\d+)?$");
+ static readonly Regex musicSelect=new Regex(@"^select\.[a-z0-9_]+_(music_mode|snapshot)(_\d+)?$"),govSwitch=new Regex(@"^switch\.[a-z0-9_]+_(music_mode|dreamview|bottom_light|side_light|ripple_light)(_\d+)?$");
  static bool HaEntityAllowed(string path,string entity){
   if(path=="select/select_option")return entity=="select.felix_mode_de_nettoyage"||musicSelect.IsMatch(entity);
   if(path=="switch/turn_on"||path=="switch/turn_off")return govSwitch.IsMatch(entity);
@@ -671,7 +671,7 @@ public sealed class QuickLaunch : NUIApplication {
     int lb=-1;if(s.TryGetProperty("attributes",out var lat)&&lat.TryGetProperty("brightness",out var lbv)&&lbv.ValueKind==JsonValueKind.Number)lb=lbv.GetInt32();lan[lid]=(lst,lb);}
    foreach(var s in doc.RootElement.EnumerateArray()){
    string id=s.GetProperty("entity_id").GetString();if(id==null)continue;
-   if(id.StartsWith("select.")&&id.EndsWith("_music_mode")){w.WriteStartObject();w.WriteString("entity",id);w.WriteString("state",Str(s,"state"));w.WriteNumber("pos",-1);w.WriteStartArray("options");if(s.TryGetProperty("attributes",out var sa)&&sa.TryGetProperty("options",out var so)&&so.ValueKind==JsonValueKind.Array)foreach(var o in so.EnumerateArray())w.WriteStringValue(o.GetString()??"");w.WriteEndArray();w.WriteEndObject();continue;}
+   if(id.StartsWith("select.")&&(id.EndsWith("_music_mode")||id.EndsWith("_snapshot"))){w.WriteStartObject();w.WriteString("entity",id);w.WriteString("state",Str(s,"state"));w.WriteNumber("pos",-1);w.WriteStartArray("options");if(s.TryGetProperty("attributes",out var sa)&&sa.TryGetProperty("options",out var so)&&so.ValueKind==JsonValueKind.Array)foreach(var o in so.EnumerateArray())w.WriteStringValue(o.GetString()??"");w.WriteEndArray();w.WriteEndObject();continue;}
    if(!(id.StartsWith("cover.")||id.StartsWith("light.")||id.StartsWith("switch.")||SensorWanted(id,patterns)))continue;
    if(id.StartsWith("light.")&&id.Contains("_segment_"))continue;
    string state=s.TryGetProperty("state",out var st)?st.GetString():"";
