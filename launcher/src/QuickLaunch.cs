@@ -682,12 +682,21 @@ public sealed class QuickLaunch : NUIApplication {
     int bri=la.TryGetProperty("brightness",out var b)&&b.ValueKind==JsonValueKind.Number?b.GetInt32():-1;
     if(lanLight.TryGetValue(id,out var lid2)&&lan.TryGetValue(lid2,out var lv)){state=lv.st;if(lv.bri>=0)bri=lv.bri;}
     var effects=la.TryGetProperty("effect_list",out var el)&&el.ValueKind==JsonValueKind.Array?el.EnumerateArray().Select(x=>x.GetString()??"").Where(x=>x!=""&&x!="none").ToArray():new string[0];
-    w.WriteStartObject();w.WriteString("entity",id);w.WriteString("state",state);w.WriteNumber("pos",pos);w.WriteNumber("bri",bri);w.WriteString("effect",Str(la,"effect"));
+    w.WriteStartObject();w.WriteString("entity",id);w.WriteString("state",state);w.WriteNumber("pos",pos);w.WriteNumber("bri",bri);w.WriteString("effect",Str(la,"effect"));w.WriteString("rgb",RgbHex(la));
     w.WriteStartArray("effects");foreach(var x in effects)w.WriteStringValue(x);w.WriteEndArray();w.WriteBoolean("color",true);w.WriteEndObject();continue;
    }
    w.WriteStartObject();w.WriteString("entity",id);w.WriteString("state",state);w.WriteNumber("pos",pos);w.WriteEndObject();
   }}w.WriteEndArray();}}catch{return null;}
   return System.Text.Encoding.UTF8.GetString(ms.ToArray());
+ }
+ // current colour of a light as #RRGGBB (rgb_color, else derived from the colour temperature), "" when unknown
+ static string RgbHex(JsonElement la)
+ {
+  try{
+   if(la.TryGetProperty("rgb_color",out var rc)&&rc.ValueKind==JsonValueKind.Array&&rc.GetArrayLength()==3)
+    return "#"+string.Concat(rc.EnumerateArray().Select(v=>Math.Max(0,Math.Min(255,(int)v.GetDouble())).ToString("X2")));
+  }catch{}
+  return "";
  }
  static int ReplyHa(string data,string result){
   IntPtr c;int r=app_control_create(out c);if(r!=0)return r;
